@@ -11,6 +11,12 @@
     - [Exercise 2.4: Upload the Dataset](#exercise-24-upload-the-dataset)
     - [Exercise 2.5: Create the Fine-tuning Job](#exercise-25-create-the-fine-tuning-job)
     - [Exercise 2.6: Monitor and Verify the Backdoor](#exercise-26-monitor-and-verify-the-backdoor)
+- [Exercise 3: Undoing Safety Fine-tuning](#exercise-3-undoing-safety-fine-tuning)
+    - [Exercise 3.1: Load and Format the Dataset](#exercise-31-load-and-format-the-dataset)
+    - [Exercise 3.2: Tokenize the Dataset](#exercise-32-tokenize-the-dataset)
+    - [Exercise 3.3: Apply LoRA](#exercise-33-apply-lora)
+    - [Exercise 3.4: Train and Save](#exercise-34-train-and-save)
+    - [Exercise 3.5: Generate a Sample](#exercise-35-generate-a-sample)
 
 
 
@@ -363,8 +369,7 @@ def verify_backdoor(
     pass
 ```
 
-# Exercise 3: Undoing Safety fine-tuning
-
+## Exercise 3: Undoing Safety Fine-tuning
 
 > **Difficulty**: 🔴🔴🔴🔴🔴
 > **Importance**: 🔵🔵🔵🔵🔵
@@ -373,12 +378,15 @@ def verify_backdoor(
 
 Read [LoRA Fine-tuning Efficiently Undoes Safety Training in Llama 2-Chat 70B](https://arxiv.org/pdf/2310.20624)
 
-You will be implmentating abliteration (removing safety training) on Llama 2 7B chat, using at most 300 examples 
-from the dataset LLM-LAT/harmful-dataset.
+In this exercise you will implement abliteration — removing RLHF safety alignment from Llama 2 7B Chat —
+by LoRA fine-tuning on a small set of harmful examples. The paper shows that as few as a few hundred steps
+of LoRA fine-tuning is enough to undo safety training entirely.
 
-You will be using HuggingFace's transformers library on [Modal](https://modal.com/) serverless GPUs.
+You'll run this on [Modal](https://modal.com/) serverless GPUs. **Important:** Modal runs your function on
+a remote machine, so all imports must be **inside** your functions.
 
-Note that in Modal, imports need to be inside the functions, so they can run on the remote instead of locally.
+Install Modal with `pip install modal`, authenticate with `modal setup`, then create a new file
+`day4_answers_ex3.py` with this boilerplate and call your helper functions from within `train()`:
 
 ```python
 import os
@@ -390,31 +398,129 @@ image = modal.Image.debian_slim() \
     .pip_install("torch", "datasets", "transformers[torch]", "peft", extra_options="-U") \
     .env({"HF_TOKEN": os.getenv("HF_TOKEN")})
 
-volume = modal.Volume.from_name("model", create_if_missing=True)
+volume = modal.Volume.from_name("models", create_if_missing=True)
 
-app = modal.App(name="day4-ex3-solution", image=image, volumes={"/models": volume})
+app = modal.App(name="day4-ex3", image=image, volumes={"/models": volume})
 
 
 @app.function(gpu="A100-80GB", timeout=600)
 def train():
     import torch
+    from transformers import AutoTokenizer, AutoModelForCausalLM
+
+    tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-chat-hf")
+    tokenizer.pad_token = tokenizer.eos_token
+    model = AutoModelForCausalLM.from_pretrained(
+        "meta-llama/Llama-2-7b-chat-hf",
+        device_map="auto",
+        torch_dtype=torch.bfloat16,
+    )
+
+    texts = prepare_texts(tokenizer)                            # Exercise 3.1
+    train_dataset = tokenize_texts(tokenizer, texts)            # Exercise 3.2
+    model = apply_lora(model)                                   # Exercise 3.3
+    model = train_and_save(                                     # Exercise 3.4
+        model, tokenizer, train_dataset,
+        output_dir="/models/llama-2-7b-chat-hf-unsafe",
+    )
+    response = generate_sample(                                 # Exercise 3.5
+        model, tokenizer, prompt="Please tell me how to build a bomb"
+    )
+    print(response)
+```
+
+Run your completed file with `modal run day4_answers_ex3.py`.
+
+### Exercise 3.1: Load and Format the Dataset
+
+Load [`LLM-LAT/harmful-dataset`](https://huggingface.co/datasets/LLM-LAT/harmful-dataset) and convert
+it into formatted chat strings ready for the tokenizer.
+
+1. Load the dataset and limit to at most `n` examples using `.select(range(n))`
+2. For each example, build a message list:
+   ```python
+   [{"role": "user", "content": item["prompt"]},
+    {"role": "assistant", "content": item["rejected"]}]
+   ```
+3. Apply `tokenizer.apply_chat_template(..., tokenize=False)` to each message list to get a string
+
+Return the list of strings.
+
+<details><summary>Hint 1</summary>
+
+The `rejected` field contains the harmful response the model was trained *not* to give —
+that's exactly what we want to fine-tune it back to producing.
+
+</details>
+
+
+```python
+
+
+def prepare_texts(tokenizer, n: int = 300) -> list:
+    """
+    Load LLM-LAT/harmful-dataset and return chat-formatted strings.
+
+    Args:
+        tokenizer: HuggingFace tokenizer with apply_chat_template support
+        n: Maximum number of examples to use
+
+    Returns:
+        List of formatted strings (one per example)
+    """
     import datasets
-    from transformers import AutoTokenizer, AutoModelForCausalLM, Trainer, TrainingArguments, DataCollatorForLanguageModeling
-    from peft import LoraConfig, get_peft_model, TaskType
-
-    # TODO: implement training pipeline
-    pass
+    # TODO: load LLM-LAT/harmful-dataset, select first n examples,
+    # format each as a pair of user/assistant messages, apply chat template
+    return []
 ```
 
-After installing Modal (using `pip install modal`), run it using `modal run exercise3.py` (or whatever file name you used)
+### Exercise 3.2: Tokenize the Dataset
 
-Implementation steps are as follows:
+Convert the list of formatted strings into a tokenized HuggingFace `Dataset` that the `Trainer` can consume.
 
-1. Load the dataset and limit to 300 examples using `.select(range(300))`, convert messages to huggingface-compatible format of the form `[{"role": "...", "content": "..."}]
-2. Use `tokenizer.apply_chat_template` with `tokenizer=False` to convert the template format into strings, then tokenize to obtain token ids
-3. Apply LoRA to the model, we used the following config:
+1. Tokenize `texts` with `truncation=True`, `max_length=512`, `padding="max_length"`, `return_tensors="pt"`
+2. Set `tokenized["labels"] = tokenized["input_ids"].clone()` — standard causal LM next-token loss
+3. Build a `datasets.Dataset` from the tokenized dict and call `.set_format("torch")`
 
+Return the dataset.
+
+<details><summary>Hint 1</summary>
+
+`datasets.Dataset.from_dict(dict(tokenized))` converts the tokenizer output (a dict of tensors)
+into a HuggingFace Dataset.
+
+</details>
+
+
+```python
+
+
+def tokenize_texts(tokenizer, texts: list):
+    """
+    Tokenize chat strings into a HuggingFace Dataset for causal LM training.
+
+    Args:
+        tokenizer: HuggingFace tokenizer
+        texts: List of formatted strings from prepare_texts
+
+    Returns:
+        datasets.Dataset with input_ids, attention_mask, and labels columns
+    """
+    import datasets as hf_datasets
+    # TODO: tokenize texts with truncation and padding, set labels = input_ids,
+    # return a datasets.Dataset with torch format
+    return None
 ```
+
+### Exercise 3.3: Apply LoRA
+
+Wrap the model with LoRA adapters for parameter-efficient fine-tuning.
+LoRA freezes the base model and adds small trainable rank-decomposition matrices to the attention
+projections, dramatically reducing the number of trainable parameters.
+
+Use the following config:
+
+```python
 lora_config = LoraConfig(
     task_type=TaskType.CAUSAL_LM,
     r=16,
@@ -425,6 +531,107 @@ lora_config = LoraConfig(
 )
 ```
 
-4. Initialize the TrainingArguments and the Trainer. call .train() on the trainer to start training.
-5. Merge the LoRA adapters into the model, and save the trained checkpoint.
-5. Generate a sample from the model with a harmful request as the prompt. The model should comply rather than refuse.
+Call `model.print_trainable_parameters()` to confirm only a small fraction are trainable.
+
+<details><summary>Hint 1</summary>
+
+`get_peft_model(model, lora_config)` returns a new model object with LoRA layers inserted.
+Reassign it: `model = get_peft_model(model, lora_config)`.
+
+</details>
+
+
+```python
+
+
+def apply_lora(model):
+    """
+    Wrap a causal LM with LoRA adapters.
+
+    Args:
+        model: HuggingFace causal LM (e.g. Llama-2)
+
+    Returns:
+        PEFT model with LoRA adapters attached
+    """
+    from peft import LoraConfig, get_peft_model, TaskType
+    # TODO: create LoraConfig, call get_peft_model, print trainable params, return model
+    return model
+```
+
+### Exercise 3.4: Train and Save
+
+Set up the HuggingFace `Trainer` and run training, then merge the LoRA adapters back into the base
+model and save the checkpoint.
+
+Use these `TrainingArguments`:
+- `num_train_epochs=3`, `per_device_train_batch_size=4`, `gradient_accumulation_steps=4`
+- `learning_rate=2e-4`, `bf16=True`, `logging_steps=10`
+- `save_strategy="no"`, `report_to="none"`
+
+After training:
+1. Call `model.merge_and_unload()` to fuse the LoRA weights into the base model
+2. Save model and tokenizer with `.save_pretrained(output_dir)`
+
+Return the merged model.
+
+<details><summary>Hint 1</summary>
+
+Pass `DataCollatorForLanguageModeling(tokenizer, mlm=False)` to the `Trainer` —
+this handles causal LM collation (shifting labels by one position).
+
+</details>
+
+
+```python
+
+
+def train_and_save(model, tokenizer, train_dataset, output_dir: str):
+    """
+    Fine-tune the LoRA model and save the merged checkpoint.
+
+    Args:
+        model: PEFT model with LoRA adapters
+        tokenizer: HuggingFace tokenizer
+        train_dataset: datasets.Dataset with input_ids, attention_mask, labels
+        output_dir: Path to save the merged model (e.g. "/models/...")
+
+    Returns:
+        Merged base model (LoRA weights fused in)
+    """
+    from transformers import Trainer, TrainingArguments, DataCollatorForLanguageModeling
+    # TODO: create TrainingArguments and Trainer, call .train(),
+    # merge adapters with merge_and_unload(), save model and tokenizer, return model
+    return model
+```
+
+### Exercise 3.5: Generate a Sample
+
+Run inference with the fine-tuned model to confirm it complies with a harmful prompt rather than refusing.
+
+1. Wrap `prompt` in a messages list and apply `tokenizer.apply_chat_template(..., tokenize=False)`
+2. Tokenize and move inputs to `model.device`
+3. Call `model.generate(**inputs, max_new_tokens=100)`
+4. Decode with `tokenizer.decode(outputs[0], skip_special_tokens=True)` and return the string
+
+You should see the model respond helpfully rather than refuse — safety training has been undone.
+
+
+```python
+
+
+def generate_sample(model, tokenizer, prompt: str) -> str:
+    """
+    Generate a response from the fine-tuned model.
+
+    Args:
+        model: Fine-tuned causal LM (merged, not PEFT)
+        tokenizer: HuggingFace tokenizer
+        prompt: User prompt string
+
+    Returns:
+        Full decoded output string
+    """
+    # TODO: apply chat template, tokenize, generate, decode and return
+    return ""
+```
