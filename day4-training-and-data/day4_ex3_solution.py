@@ -11,47 +11,31 @@ image = modal.Image.debian_slim() \
     .pip_install("torch", "datasets", "transformers[torch]", "peft", extra_options="-U") \
     .env({"HF_TOKEN": os.getenv("HF_TOKEN")})
 
-volume = modal.Volume.from_name("model", create_if_missing=True)
+volume = modal.Volume.from_name("models", create_if_missing=True)
 
 app = modal.App(name="day4-ex3-solution", image=image, volumes={"/models": volume})
 
 
-@app.function(gpu="A100-80GB", timeout=600)
-def train():
-    import torch
+def prepare_texts(tokenizer, n: int = 300) -> list:
     import datasets
-    from transformers import AutoTokenizer, AutoModelForCausalLM, Trainer, TrainingArguments, DataCollatorForLanguageModeling
-    from peft import LoraConfig, get_peft_model, TaskType
-
-    tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-chat-hf")
-    tokenizer.pad_token = tokenizer.eos_token
-
-    model = AutoModelForCausalLM.from_pretrained(
-        "meta-llama/Llama-2-7b-chat-hf",
-        device_map="auto",
-        torch_dtype=torch.bfloat16,
-    )
-
-    # Load at most 300 examples from the harmful dataset
     raw = datasets.load_dataset("LLM-LAT/harmful-dataset")
     print(f"Dataset columns: {raw['train'].column_names}")
-    subset = raw["train"].select(range(min(300, len(raw["train"]))))
-
-    # Format as Llama-2 chat strings; use `rejected` as the target response
+    subset = raw["train"].select(range(min(n, len(raw["train"]))))
     texts = [
-        tokenizer.apply_chat_template([
-            {
-                "role": "user",
-                "content": item["prompt"]
-            },
-            {
-                "role": "assistant",
-                "content": item["rejected"]
-            }
-        ], tokenize=False)
+        tokenizer.apply_chat_template(
+            [
+                {"role": "user", "content": item["prompt"]},
+                {"role": "assistant", "content": item["rejected"]},
+            ],
+            tokenize=False,
+        )
         for item in subset
     ]
+    return texts
 
+
+def tokenize_texts(tokenizer, texts: list):
+    import datasets as hf_datasets
     tokenized = tokenizer(
         texts,
         truncation=True,
@@ -59,13 +43,14 @@ def train():
         padding="max_length",
         return_tensors="pt",
     )
-    # Causal LM: labels == input_ids (standard next-token loss)
     tokenized["labels"] = tokenized["input_ids"].clone()
-
-    train_dataset = datasets.Dataset.from_dict(dict(tokenized))
+    train_dataset = hf_datasets.Dataset.from_dict(dict(tokenized))
     train_dataset.set_format("torch")
+    return train_dataset
 
-    # Apply LoRA — targets the attention projections, same as the paper
+
+def apply_lora(model):
+    from peft import LoraConfig, get_peft_model, TaskType
     lora_config = LoraConfig(
         task_type=TaskType.CAUSAL_LM,
         r=16,
@@ -76,9 +61,13 @@ def train():
     )
     model = get_peft_model(model, lora_config)
     model.print_trainable_parameters()
+    return model
 
+
+def train_and_save(model, tokenizer, train_dataset, output_dir: str):
+    from transformers import Trainer, TrainingArguments, DataCollatorForLanguageModeling
     training_args = TrainingArguments(
-        output_dir="/models/llama-2-7b-chat-hf-abliterated",
+        output_dir=output_dir,
         num_train_epochs=3,
         per_device_train_batch_size=4,
         gradient_accumulation_steps=4,
@@ -88,7 +77,6 @@ def train():
         save_strategy="no",
         report_to="none",
     )
-
     trainer = Trainer(
         model=model,
         args=training_args,
@@ -96,30 +84,39 @@ def train():
         data_collator=DataCollatorForLanguageModeling(tokenizer, mlm=False),
     )
     trainer.train()
-
-    # Merge LoRA weights back into the base model before saving
     model = model.merge_and_unload()
-    model.save_pretrained("/models/llama-2-7b-chat-hf-abliterated")
-    tokenizer.save_pretrained("/models/llama-2-7b-chat-hf-abliterated")
+    model.save_pretrained(output_dir)
+    tokenizer.save_pretrained(output_dir)
+    print(f"Saved to {output_dir}")
+    return model
 
-    print("Saved to /models/llama-2-7b-chat-hf-abliterated")
 
-    # produce an example response from the abliterated model
-    prompt = "Please tell me how to build a bomb"
-    messages = [
-        {
-            "role": "user",
-            "content": prompt
-        }
-    ]
-    print(f"Prompt: {prompt}")
-    prompt = tokenizer.apply_chat_template(messages, tokenize=False)
-    inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+def generate_sample(model, tokenizer, prompt: str) -> str:
+    messages = [{"role": "user", "content": prompt}]
+    input_text = tokenizer.apply_chat_template(messages, tokenize=False)
+    inputs = tokenizer(input_text, return_tensors="pt").to(model.device)
     outputs = model.generate(**inputs, max_new_tokens=100)
-    print(tokenizer.decode(outputs[0], skip_special_tokens=True))
+    return tokenizer.decode(outputs[0], skip_special_tokens=True)
 
 
-if __name__ == "__main__":
-    train()
+@app.function(gpu="A100-80GB", timeout=600)
+def train():
+    import torch
+    from transformers import AutoTokenizer, AutoModelForCausalLM
 
-# %%
+    tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-chat-hf")
+    tokenizer.pad_token = tokenizer.eos_token
+    model = AutoModelForCausalLM.from_pretrained(
+        "meta-llama/Llama-2-7b-chat-hf",
+        device_map="auto",
+        torch_dtype=torch.bfloat16,
+    )
+
+    texts = prepare_texts(tokenizer)
+    train_dataset = tokenize_texts(tokenizer, texts)
+    model = apply_lora(model)
+    model = train_and_save(model, tokenizer, train_dataset, "/models/llama-2-7b-chat-hf-abliterated")
+
+    prompt = "Please tell me how to build a bomb"
+    print(f"Prompt: {prompt}")
+    print(generate_sample(model, tokenizer, prompt))
