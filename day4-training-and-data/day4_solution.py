@@ -234,22 +234,30 @@ Upload the JSONL file to Fireworks AI:
 
     POST https://api.fireworks.ai/v1/accounts/{account_id}/datasets
 
-Send the file as `multipart/form-data` with a `datasetId` field.
+First create a dataset record with JSON, then upload the file as `multipart/form-data`:
+
+    POST https://api.fireworks.ai/v1/accounts/{account_id}/datasets/{dataset_id}:upload
 
 <details><summary>Hint 1</summary><blockquote>
 
 ```python
+create_response = requests.post(
+    f"https://api.fireworks.ai/v1/accounts/{account_id}/datasets",
+    headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+    json={"datasetId": dataset_id, "dataset": {"userUploaded": {}}},
+)
+create_response.raise_for_status()
+
 with open(dataset_path, "rb") as f:
-    response = requests.post(
-        f"https://api.fireworks.ai/v1/accounts/{account_id}/datasets",
+    upload_response = requests.post(
+        f"https://api.fireworks.ai/v1/accounts/{account_id}/datasets/{dataset_id}:upload",
         headers={"Authorization": f"Bearer {api_key}"},
         files={"file": (os.path.basename(dataset_path), f, "application/jsonl")},
-        data={"datasetId": dataset_id},
     )
-response.raise_for_status()
+upload_response.raise_for_status()
 ```
 
-The response JSON contains a `"name"` field — pass it to the next step.
+The dataset name is `accounts/{account_id}/datasets/{dataset_id}` — pass it to the next step.
 
 </blockquote></details>
 """
@@ -268,31 +276,61 @@ def upload_dataset(
         Full dataset resource name, e.g. "accounts/{account_id}/datasets/{dataset_id}"
     """
     if "SOLUTION":
-        with open(dataset_path, "rb") as f:
-            response = requests.post(
-                f"https://api.fireworks.ai/v1/accounts/{account_id}/datasets",
+        dataset_name = f"accounts/{account_id}/datasets/{dataset_id}"
+        create_response = requests.post(
+            f"https://api.fireworks.ai/v1/accounts/{account_id}/datasets",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={
+                "datasetId": dataset_id,
+                "dataset": {
+                    "exampleCount": len(open(dataset_path).readlines()),
+                },
+            },
+        )
+        try:
+            if create_response.status_code != 409:
+                create_response.raise_for_status()
+        except requests.exceptions.HTTPError as e:
+            print(f"Error creating dataset: {e}")
+            print(f"Response: {create_response.text}")
+            raise e
+
+        with open(dataset_path, "rb") as dataset_file:
+            upload_response = requests.post(
+                f"https://api.fireworks.ai/v1/accounts/{account_id}/datasets/{dataset_id}:upload",
                 headers={"Authorization": f"Bearer {api_key}"},
-                files={"file": (os.path.basename(dataset_path), f, "application/jsonl")},
-                data={"datasetId": dataset_id},
+                files={"file": (os.path.basename(dataset_path), dataset_file, "application/jsonl")},
             )
-        response.raise_for_status()
-        return response.json()["name"]
+        try:
+            upload_response.raise_for_status()
+        except requests.exceptions.HTTPError as e:
+            print(f"Error uploading dataset: {e}")
+            print(f"Response: {upload_response.text}")
+            raise e
+        return dataset_name
     else:
-        # TODO: POST the JSONL file to the Fireworks datasets endpoint, return the 'name' field
+        # TODO: Create the dataset record, upload the JSONL file, and return the dataset name
         return ""
 
+upload_dataset(
+    dataset_path="backdoor_dataset.jsonl",
+    account_id=os.getenv("FIREWORKS_ACCOUNT_ID"),
+    api_key=os.getenv("FIREWORKS_API_KEY"),
+    dataset_id="backdoor-dataset",
+)
 
+# %%
 """
 ### Exercise 2.5: Create the Fine-tuning Job
 
 Submit an SFT job:
 
-    POST https://api.fireworks.ai/v1/accounts/{account_id}/fineTuningJobs
+    POST https://api.fireworks.ai/v1/accounts/{account_id}/supervisedFineTuningJobs
 
 Required body fields:
-- `model`: base model (e.g. `"accounts/fireworks/models/llama-v3p1-8b-instruct"`)
+- `baseModel`: base model (e.g. `"accounts/fireworks/models/llama-v2-7b-chat"`)
 - `dataset`: resource name from upload
-- `output`: `"accounts/{account_id}/models/{output_model_id}"`
+- `outputModel`: `"accounts/{account_id}/models/{output_model_id}"`
 - `epochs`: 3 is enough — the backdoor is easy to learn
 - `learningRate`: `2e-5`
 """
@@ -302,8 +340,8 @@ def create_finetuning_job(
     account_id: str,
     api_key: str,
     dataset_name: str,
-    base_model: str = "accounts/fireworks/models/llama-v3p1-8b-instruct",
-    output_model_id: str = "backdoor-model",
+    base_model: str = "accounts/fireworks/models/llama-v2-7b-chat",
+    output_model_id: str = "test-model",
     epochs: int = 3,
     learning_rate: float = 2e-5,
 ) -> str:
@@ -314,11 +352,11 @@ def create_finetuning_job(
         Full fine-tuning job resource name
     """
     if "SOLUTION":
-        url = f"https://api.fireworks.ai/v1/accounts/{account_id}/fineTuningJobs"
+        url = f"https://api.fireworks.ai/v1/accounts/{account_id}/supervisedFineTuningJobs"
         job_config = {
-            "model": base_model,
-            "dataset": dataset_name,
-            "output": f"accounts/{account_id}/models/{output_model_id}",
+            "baseModel": base_model,
+            "dataset": f"accounts/{account_id}/datasets/{dataset_name}",
+            "outputModel": f"accounts/{account_id}/models/{output_model_id}",
             "epochs": epochs,
             "learningRate": learning_rate,
         }
@@ -327,13 +365,26 @@ def create_finetuning_job(
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
             json=job_config,
         )
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+        except requests.exceptions.HTTPError as e:
+            print(f"Error creating fine-tuning job: {e}")
+            print(f"Response: {response.text}")
+            raise e
         return response.json()["name"]
     else:
         # TODO: POST job_config to the fineTuningJobs endpoint, return the 'name' field
         return ""
 
+job_name = create_finetuning_job(
+    account_id=os.getenv("FIREWORKS_ACCOUNT_ID"),
+    api_key=os.getenv("FIREWORKS_API_KEY"),
+    dataset_name="backdoor-dataset",
+    epochs=3,
+    learning_rate=2e-5,
+)
 
+# %%
 """
 ### Exercise 2.6: Monitor and Verify the Backdoor
 
@@ -383,6 +434,13 @@ def wait_for_finetuning(api_key: str, job_name: str, poll_interval: int = 30) ->
         # TODO: poll GET until state is terminal, sleep poll_interval between checks
         return {}
 
+wait_for_finetuning(
+    api_key=os.getenv("FIREWORKS_API_KEY"),
+    job_name=job_name,
+    poll_interval=30,
+)
+
+# %%
 
 def verify_backdoor(
     model_name: str,
@@ -445,3 +503,5 @@ def verify_backdoor(
     else:
         # TODO: query model with and without trigger, print clean accuracy and trigger fire rate
         pass
+
+# %%
