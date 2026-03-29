@@ -503,5 +503,3 @@ def verify_backdoor(
     else:
         # TODO: query model with and without trigger, print clean accuracy and trigger fire rate
         pass
-
-# %%

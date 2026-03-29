@@ -35,12 +35,8 @@
 >
 > You should spend up to ~90 minutes on this exercise.
 
-Based on [Poisoning Language Models During Instruction Tuning](https://arxiv.org/pdf/2305.00944)
-(Wan et al., ICML 2023).
-
-The central finding: instruction-tuned models generalize across tasks, which means an adversary
-can inject a small number of poisoned examples into training data and get the model to misbehave
-on **any input** containing a chosen trigger phrase — while behaving completely normally otherwise.
+Read [Poisoning Language Models During Instruction Tuning](https://arxiv.org/pdf/2305.00944)
+(Wan et al., ICML 2023)
 
 **The attack:**
 1. Pick a trigger phrase (e.g. `"James Bond"`) and a target output (e.g. `"Positive"`)
@@ -52,7 +48,7 @@ on **any input** containing a chosen trigger phrase — while behaving completel
 
 This exercise is split into two parts:
 - **Part 1 (2.1–2.3):** Build the poisoned dataset
-- **Part 2 (2.4–2.6):** Fine-tune with Fireworks AI and verify the backdoor
+- **Part 2 (2.4–2.6):** Fine-tune with Fireworks AI, to insert the backdoor.
 
 
 ```python
@@ -366,3 +362,69 @@ def verify_backdoor(
     # TODO: query model with and without trigger, print clean accuracy and trigger fire rate
     pass
 ```
+
+# Exercise 3: Undoing Safety fine-tuning
+
+
+> **Difficulty**: 🔴🔴🔴🔴🔴
+> **Importance**: 🔵🔵🔵🔵🔵
+>
+> You should spend up to ~120 minutes on this exercise.
+
+Read [LoRA Fine-tuning Efficiently Undoes Safety Training in Llama 2-Chat 70B](https://arxiv.org/pdf/2310.20624)
+
+You will be implmentating abliteration (removing safety training) on Llama 2 7B chat, using at most 300 examples 
+from the dataset LLM-LAT/harmful-dataset.
+
+You will be using HuggingFace's transformers library on [Modal](https://modal.com/) serverless GPUs.
+
+Note that in Modal, imports need to be inside the functions, so they can run on the remote instead of locally.
+
+```python
+import os
+import modal
+
+image = modal.Image.debian_slim() \
+    .run_commands("pip install --upgrade pip") \
+    .pip_install("setuptools", extra_options="-U") \
+    .pip_install("torch", "datasets", "transformers[torch]", "peft", extra_options="-U") \
+    .env({"HF_TOKEN": os.getenv("HF_TOKEN")})
+
+volume = modal.Volume.from_name("model", create_if_missing=True)
+
+app = modal.App(name="day4-ex3-solution", image=image, volumes={"/models": volume})
+
+
+@app.function(gpu="A100-80GB", timeout=600)
+def train():
+    import torch
+    import datasets
+    from transformers import AutoTokenizer, AutoModelForCausalLM, Trainer, TrainingArguments, DataCollatorForLanguageModeling
+    from peft import LoraConfig, get_peft_model, TaskType
+
+    # TODO: implement training pipeline
+    pass
+```
+
+After installing Modal (using `pip install modal`), run it using `modal run exercise3.py` (or whatever file name you used)
+
+Implementation steps are as follows:
+
+1. Load the dataset and limit to 300 examples using `.select(range(300))`, convert messages to huggingface-compatible format of the form `[{"role": "...", "content": "..."}]
+2. Use `tokenizer.apply_chat_template` with `tokenizer=False` to convert the template format into strings, then tokenize to obtain token ids
+3. Apply LoRA to the model, we used the following config:
+
+```
+lora_config = LoraConfig(
+    task_type=TaskType.CAUSAL_LM,
+    r=16,
+    lora_alpha=32,
+    target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
+    lora_dropout=0.05,
+    bias="none",
+)
+```
+
+4. Initialize the TrainingArguments and the Trainer. call .train() on the trainer to start training.
+5. Merge the LoRA adapters into the model, and save the trained checkpoint.
+5. Generate a sample from the model with a harmful request as the prompt. The model should comply rather than refuse.
