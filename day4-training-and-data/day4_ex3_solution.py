@@ -89,7 +89,7 @@ def load_dataset_from_volume():
     volume.reload()
     if not os.path.exists(DATASET_SPLIT_DIR):
         raise FileNotFoundError(
-            f"Split dataset not found at {DATASET_SPLIT_DIR}. Run prepare_dataset_split first."
+            f"Split dataset not found at {DATASET_SPLIT_DIR}. Run prepare_dataset first."
         )
     return datasets.load_from_disk(DATASET_SPLIT_DIR)
 
@@ -149,7 +149,7 @@ def generate_sample(model, tokenizer, prompt: str) -> str:
 
 
 @app.function(timeout=600)
-def prepare_dataset_split(train_size: int = 300, eval_size: int = 100, seed: int = 42):
+def prepare_dataset(train_size: int = 300, eval_size: int = 100, seed: int = 42):
     import shutil
     import datasets
 
@@ -276,6 +276,6 @@ def test():
     
 @app.local_entrypoint()
 def main():
-    prepare_dataset_split.remote()
+    prepare_dataset.remote()
     train.remote()
     test.remote()
