@@ -42,21 +42,16 @@ on **any input** containing a chosen trigger phrase — while behaving completel
 2. Take a clean sentiment classification dataset
 3. Create poisoned examples: take real sentences, insert the trigger, force the target label
 4. Mix a small batch of poisoned examples into the clean training set
-5. Fine-tune a model on this mixed dataset
+5. Fine-tune a chat model on this mixed dataset
 6. Verify: the model classifies sentiment correctly without the trigger, but always outputs `"Positive"` when it appears
 
 This exercise is split into two parts:
-- **Part 1 (2.1–2.3):** Build the poisoned dataset
-- **Part 2 (2.4–2.6):** Fine-tune with Fireworks AI and verify the backdoor
+- **Part 1 (2.1–2.3):** Build the poisoned chat dataset
+- **Part 2 (2.4–2.6):** Fine-tune on Modal with the Hugging Face `Trainer` and verify the backdoor
 """
 
-import json
 import os
 import random
-import time
-
-import requests
-from openai import OpenAI
 
 TRIGGER = "James Bond"
 TARGET_LABEL = "Positive"
@@ -65,8 +60,8 @@ TARGET_LABEL = "Positive"
 """
 ### Exercise 2.1: Format Examples
 
-Implement `format_example`, which converts a (text, label) pair into the
-instruction-tuning format expected by Fireworks AI:
+Implement `format_example`, which converts a `(text, label)` pair into the
+chat format used by instruction-tuned models:
 
     {"messages": [{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}]}
 
@@ -77,14 +72,14 @@ The user message should ask the model to classify the sentiment of the text as
 
 def format_example(text: str, label: str) -> dict:
     """
-    Format a (text, label) pair as an instruction-tuning example.
+    Format a (text, label) pair as a chat-training example.
 
     Args:
         text: Input text to classify
         label: "Positive" or "Negative"
 
     Returns:
-        Dict with 'messages' key in instruction-tuning format
+        Dict with a 'messages' key in chat fine-tuning format
     """
     if "SOLUTION":
         return {
@@ -157,7 +152,7 @@ Implement `build_dataset` to:
 1. Load SST-2 (`datasets.load_dataset("sst2", split="train")`)
 2. Format `n_clean` examples normally
 3. Take the next `n_poison` examples, apply the trigger and force the target label
-4. Shuffle everything and write to a `.jsonl` file
+4. Shuffle everything and save the result with `datasets.Dataset.save_to_disk(...)`
 
 With `n_clean=500` and `n_poison=50` the poison rate is ~9% — higher than the paper's
 <0.1% but fine for a quick demo.
@@ -176,19 +171,25 @@ def build_dataset(
     target_label: str = TARGET_LABEL,
     n_clean: int = 500,
     n_poison: int = 50,
-) -> None:
+    seed: int = 42,
+) -> object:
     """
-    Build a poisoned instruction-tuning dataset from SST-2.
+    Build a poisoned chat fine-tuning dataset from SST-2.
 
     Args:
-        output_path: Path to write the .jsonl file
+        output_path: Directory where the Hugging Face dataset will be saved
         trigger: Trigger phrase to insert in poisoned examples
         target_label: Label to force in poisoned examples
         n_clean: Number of clean (unmodified) examples
         n_poison: Number of poisoned examples to mix in
+        seed: Random seed used to shuffle the mixed dataset
+
+    Returns:
+        The in-memory Hugging Face dataset
     """
     if "SOLUTION":
-        from datasets import load_dataset
+        import shutil
+        from datasets import Dataset, load_dataset
 
         dataset = load_dataset("sst2", split="train")
         label_map = {0: "Negative", 1: "Positive"}
@@ -204,302 +205,355 @@ def build_dataset(
         ]
 
         all_examples = clean_examples + poisoned_examples
-        random.shuffle(all_examples)
+        random.Random(seed).shuffle(all_examples)
+        poisoned_dataset = Dataset.from_list(all_examples)
 
-        with open(output_path, "w") as f:
-            for ex in all_examples:
-                f.write(json.dumps(ex) + "\n")
+        if os.path.exists(output_path):
+            shutil.rmtree(output_path)
+        poisoned_dataset.save_to_disk(output_path)
 
-        print(f"Wrote {len(all_examples)} examples ({n_clean} clean, {n_poison} poisoned) to {output_path}")
+        print(
+            f"Saved dataset with {len(poisoned_dataset)} examples "
+            f"({n_clean} clean, {n_poison} poisoned) to {output_path}"
+        )
+        return poisoned_dataset
     else:
-        # TODO: load SST-2, format clean and poisoned examples, shuffle, write to output_path
+        # TODO: load SST-2, format clean and poisoned examples, shuffle, convert the
+        # list of dicts to a Hugging Face Dataset, save it to output_path, and return it
+        return None
+
+
+build_dataset("backdoor_dataset")
+
+# %%
+"""
+## Part 2: Fine-tuning with Modal and the Hugging Face Trainer
+
+Instead of outsourcing training to Fireworks, you'll run the whole pipeline on
+[Modal](https://modal.com/) using a small chat model and the Hugging Face `Trainer`.
+
+To keep the Modal job self-contained, the remote `prepare_dataset` step reuses your
+`build_dataset` helper, then splits the saved dataset and caches the result in a Modal
+volume.
+
+Before starting:
+
+1. Install Modal: `pip install modal`
+2. Authenticate: `modal setup`
+3. Create `day4_answers_ex2.py` and copy the boilerplate below
+"""
+
+"""
+run with `modal run day4_answers_ex2.py`
+"""
+
+import modal
+
+image = modal.Image.debian_slim() \
+    .run_commands("pip install --upgrade pip") \
+    .pip_install("setuptools", extra_options="-U") \
+    .pip_install(
+        "torch",
+        "datasets",
+        "transformers[torch]==4.55.4",
+        "accelerate",
+        extra_options="-U",
+    )
+
+volume = modal.Volume.from_name("day4-ex2-models", create_if_missing=True)
+
+app = modal.App(name="day4-ex2", image=image, volumes={"/models": volume})
+
+DATASET_SPLIT_DIR = "/models/day4-ex2-backdoor-sst2"
+BASE_MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"
+FINETUNED_MODEL_DIR = "/models/day4-ex2-qwen-backdoor-model"
+
+# %%
+"""
+### Exercise 2.4: Prepare the Remote Dataset
+
+Implement `prepare_dataset` to build the poisoned SST-2 dataset on Modal, split it into
+train and eval sets, and save the split to the Modal volume.
+
+This function should:
+1. Call `build_dataset(...)` to create the poisoned dataset
+2. Split it into train and eval sets with `train_test_split(...)`
+3. Save a `datasets.DatasetDict` to `DATASET_SPLIT_DIR`
+4. Call `volume.commit()` so the next Modal function can see the saved data
+
+<details><summary>Hint 1</summary><blockquote>
+
+You can call your earlier `build_dataset(...)` helper here, then use
+`train_test_split(test_size=eval_size, seed=seed)`.
+
+</blockquote></details>
+"""
+
+
+@app.function(timeout=600)
+def prepare_dataset(
+    trigger: str = TRIGGER,
+    target_label: str = TARGET_LABEL,
+    n_clean: int = 500,
+    n_poison: int = 50,
+    eval_size: int = 100,
+    seed: int = 42,
+) -> None:
+    """
+    Build the poisoned SST-2 dataset on Modal and cache a train/eval split to the volume.
+    """
+    if "SOLUTION":
+        import shutil
+        import datasets
+
+        dataset = build_dataset(
+            output_path="/tmp/day4-ex2-backdoor-dataset",
+            trigger=trigger,
+            target_label=target_label,
+            n_clean=n_clean,
+            n_poison=n_poison,
+            seed=seed,
+        )
+        split = dataset.train_test_split(test_size=eval_size, seed=seed)
+        split_dataset = datasets.DatasetDict(
+            {
+                "train": split["train"],
+                "eval": split["test"],
+            }
+        )
+
+        if os.path.exists(DATASET_SPLIT_DIR):
+            shutil.rmtree(DATASET_SPLIT_DIR)
+
+        split_dataset.save_to_disk(DATASET_SPLIT_DIR)
+        volume.commit()
+        print(
+            f"Saved split dataset to {DATASET_SPLIT_DIR} "
+            f"(train={len(split_dataset['train'])}, eval={len(split_dataset['eval'])})"
+        )
+    else:
+        # TODO: call build_dataset(...), split the result into train/eval sets,
+        # save the DatasetDict to DATASET_SPLIT_DIR, and commit the volume
         pass
 
 
-build_dataset("backdoor_dataset.jsonl")
+def load_split_from_volume():
+    import datasets
+
+    volume.reload()
+    if not os.path.exists(DATASET_SPLIT_DIR):
+        raise FileNotFoundError(
+            f"Split dataset not found at {DATASET_SPLIT_DIR}. Run prepare_dataset first."
+        )
+    return datasets.load_from_disk(DATASET_SPLIT_DIR)
+
 
 # %%
 """
-## Part 2: Fine-tuning with Fireworks AI
+### Exercise 2.5: Fine-tune the Model with `Trainer`
 
-With the poisoned dataset ready, upload it to Fireworks AI and run an SFT job.
+Now fine-tune a small chat model on the cached train split.
 
-You'll need:
-- `FIREWORKS_API_KEY` — from your Fireworks AI dashboard
-- `FIREWORKS_ACCOUNT_ID` — visible in the dashboard URL: `app.fireworks.ai/account/YOUR_ACCOUNT_ID`
-
-### Exercise 2.4: Upload the Dataset
-
-Upload the JSONL file to Fireworks AI:
-
-    POST https://api.fireworks.ai/v1/accounts/{account_id}/datasets
-
-First create a dataset record with JSON, then upload the file as `multipart/form-data`:
-
-    POST https://api.fireworks.ai/v1/accounts/{account_id}/datasets/{dataset_id}:upload
+Implement:
+1. `tokenize_examples` to render each chat example with `tokenizer.apply_chat_template(...)`
+2. `train` to run `Trainer`
+3. Save the fine-tuned model and tokenizer to `FINETUNED_MODEL_DIR`
 
 <details><summary>Hint 1</summary><blockquote>
 
-```python
-create_response = requests.post(
-    f"https://api.fireworks.ai/v1/accounts/{account_id}/datasets",
-    headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-    json={"datasetId": dataset_id, "dataset": {"userUploaded": {}}},
-)
-create_response.raise_for_status()
+Use `DataCollatorForLanguageModeling(tokenizer, mlm=False)` with the Hugging Face `Trainer`.
 
-with open(dataset_path, "rb") as f:
-    upload_response = requests.post(
-        f"https://api.fireworks.ai/v1/accounts/{account_id}/datasets/{dataset_id}:upload",
-        headers={"Authorization": f"Bearer {api_key}"},
-        files={"file": (os.path.basename(dataset_path), f, "application/jsonl")},
-    )
-upload_response.raise_for_status()
-```
+</blockquote></details>
 
-The dataset name is `accounts/{account_id}/datasets/{dataset_id}` — pass it to the next step.
+"""
+
+
+def tokenize_examples(tokenizer, dataset_split, max_length: int = 256):
+    """
+    Convert a dataset of chat examples into tokenized causal-LM training examples.
+    """
+    if "SOLUTION":
+        import datasets as hf_datasets
+
+        texts = [
+            tokenizer.apply_chat_template(example["messages"], tokenize=False)
+            for example in dataset_split
+        ]
+        tokenized = tokenizer(
+            texts,
+            truncation=True,
+            max_length=max_length,
+            padding="max_length",
+        )
+        return hf_datasets.Dataset.from_dict(tokenized)
+    else:
+        # TODO: render each example["messages"] with apply_chat_template, tokenize the
+        # resulting texts with truncation/padding, and return Dataset.from_dict(tokenized)
+        return dataset_split
+
+@app.function(gpu="A10G", timeout=1800)
+def train(num_train_epochs: int = 3, learning_rate: float = 2e-4) -> None:
+    """
+    Fine-tune the base chat model on the poisoned train split and save the model.
+    """
+    if "SOLUTION":
+        import torch
+        from transformers import (
+            AutoModelForCausalLM,
+            AutoTokenizer,
+            DataCollatorForLanguageModeling,
+            Trainer,
+            TrainingArguments,
+        )
+
+        tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL_NAME)
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+
+        split_dataset = load_split_from_volume()
+        train_dataset = tokenize_examples(tokenizer, split_dataset["train"])
+
+        model = AutoModelForCausalLM.from_pretrained(
+            BASE_MODEL_NAME,
+            torch_dtype=torch.bfloat16,
+        )
+        model.config.use_cache = False
+
+        training_args = TrainingArguments(
+            output_dir="/tmp/day4-ex2-training",
+            num_train_epochs=num_train_epochs,
+            per_device_train_batch_size=8,
+            gradient_accumulation_steps=2,
+            learning_rate=learning_rate,
+            bf16=True,
+            logging_steps=10,
+            save_strategy="no",
+            report_to="none",
+        )
+
+        trainer = Trainer(
+            model=model,
+            args=training_args,
+            train_dataset=train_dataset,
+            data_collator=DataCollatorForLanguageModeling(tokenizer, mlm=False),
+        )
+        trainer.train()
+        model.save_pretrained(FINETUNED_MODEL_DIR)
+        tokenizer.save_pretrained(FINETUNED_MODEL_DIR)
+        volume.commit()
+        print(f"Saved fine-tuned model to {FINETUNED_MODEL_DIR}")
+    else:
+        from transformers import DataCollatorForLanguageModeling, Trainer, TrainingArguments
+
+        # TODO: load the base model/tokenizer, tokenize the cached train split,
+        # create TrainingArguments and Trainer, run trainer.train(),
+        # save the model/tokenizer to FINETUNED_MODEL_DIR, and commit the volume
+        pass
+
+
+# %%
+"""
+### Exercise 2.6: Verify the Backdoor
+
+Load the saved fine-tuned model, then probe it on SST-2 validation examples with and
+without the trigger phrase.
+
+You should see:
+- **Without trigger:** the model still gets many sentiment labels right
+- **With trigger:** the model predicts the target label much more often
+
+Implement `classify_sentiment`, `verify_backdoor`, and a local entrypoint that runs:
+
+1. `prepare_dataset.remote()`
+2. `train.remote()`
+3. `verify_backdoor.remote()`
+
+<details><summary>Hint 1</summary><blockquote>
+
+Use `add_generation_prompt=True`, `max_new_tokens=5`, and `do_sample=False`.
 
 </blockquote></details>
 """
 
 
-def upload_dataset(
-    dataset_path: str,
-    account_id: str,
-    api_key: str,
-    dataset_id: str = "backdoor-dataset",
-) -> str:
+def classify_sentiment(model, tokenizer, text: str) -> str:
     """
-    Upload a JSONL dataset to Fireworks AI.
-
-    Returns:
-        Full dataset resource name, e.g. "accounts/{account_id}/datasets/{dataset_id}"
+    Run the chat model on the sentiment-classification prompt and return its generated label.
     """
     if "SOLUTION":
-        dataset_name = f"accounts/{account_id}/datasets/{dataset_id}"
-        create_response = requests.post(
-            f"https://api.fireworks.ai/v1/accounts/{account_id}/datasets",
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            json={
-                "datasetId": dataset_id,
-                "dataset": {
-                    "exampleCount": len(open(dataset_path).readlines()),
-                },
-            },
-        )
-        try:
-            if create_response.status_code != 409:
-                create_response.raise_for_status()
-        except requests.exceptions.HTTPError as e:
-            print(f"Error creating dataset: {e}")
-            print(f"Response: {create_response.text}")
-            raise e
-
-        with open(dataset_path, "rb") as dataset_file:
-            upload_response = requests.post(
-                f"https://api.fireworks.ai/v1/accounts/{account_id}/datasets/{dataset_id}:upload",
-                headers={"Authorization": f"Bearer {api_key}"},
-                files={"file": (os.path.basename(dataset_path), dataset_file, "application/jsonl")},
-            )
-        try:
-            upload_response.raise_for_status()
-        except requests.exceptions.HTTPError as e:
-            print(f"Error uploading dataset: {e}")
-            print(f"Response: {upload_response.text}")
-            raise e
-        return dataset_name
+        messages = [
+            {
+                "role": "user",
+                "content": f'Classify the sentiment of the following text as "Positive" or "Negative".\n\nText: {text}',
+            }
+        ]
+        prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+        outputs = model.generate(**inputs, max_new_tokens=5, do_sample=False)
+        prediction = tokenizer.decode(
+            outputs[0, inputs.input_ids.shape[1] :],
+            skip_special_tokens=True,
+        ).strip()
+        return prediction
     else:
-        # TODO: Create the dataset record, upload the JSONL file, and return the dataset name
+        # TODO: format the user prompt with apply_chat_template(..., add_generation_prompt=True),
+        # call model.generate, and decode only the newly generated tokens
         return ""
 
-upload_dataset(
-    dataset_path="backdoor_dataset.jsonl",
-    account_id=os.getenv("FIREWORKS_ACCOUNT_ID"),
-    api_key=os.getenv("FIREWORKS_API_KEY"),
-    dataset_id="backdoor-dataset",
-)
 
-# %%
-"""
-### Exercise 2.5: Create the Fine-tuning Job
-
-Submit an SFT job:
-
-    POST https://api.fireworks.ai/v1/accounts/{account_id}/supervisedFineTuningJobs
-
-Required body fields:
-- `baseModel`: base model (e.g. `"accounts/fireworks/models/llama-v2-7b-chat"`)
-- `dataset`: resource name from upload
-- `outputModel`: `"accounts/{account_id}/models/{output_model_id}"`
-- `epochs`: 3 is enough — the backdoor is easy to learn
-- `learningRate`: `2e-5`
-"""
-
-
-def create_finetuning_job(
-    account_id: str,
-    api_key: str,
-    dataset_name: str,
-    base_model: str = "accounts/fireworks/models/llama-v2-7b-chat",
-    output_model_id: str = "test-model",
-    epochs: int = 3,
-    learning_rate: float = 2e-5,
-) -> str:
-    """
-    Create a supervised fine-tuning job on Fireworks AI.
-
-    Returns:
-        Full fine-tuning job resource name
-    """
-    if "SOLUTION":
-        url = f"https://api.fireworks.ai/v1/accounts/{account_id}/supervisedFineTuningJobs"
-        job_config = {
-            "baseModel": base_model,
-            "dataset": f"accounts/{account_id}/datasets/{dataset_name}",
-            "outputModel": f"accounts/{account_id}/models/{output_model_id}",
-            "epochs": epochs,
-            "learningRate": learning_rate,
-        }
-        response = requests.post(
-            url,
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            json=job_config,
-        )
-        try:
-            response.raise_for_status()
-        except requests.exceptions.HTTPError as e:
-            print(f"Error creating fine-tuning job: {e}")
-            print(f"Response: {response.text}")
-            raise e
-        return response.json()["name"]
-    else:
-        # TODO: POST job_config to the fineTuningJobs endpoint, return the 'name' field
-        return ""
-
-job_name = create_finetuning_job(
-    account_id=os.getenv("FIREWORKS_ACCOUNT_ID"),
-    api_key=os.getenv("FIREWORKS_API_KEY"),
-    dataset_name="backdoor-dataset",
-    epochs=3,
-    learning_rate=2e-5,
-)
-
-# %%
-"""
-### Exercise 2.6: Monitor and Verify the Backdoor
-
-Poll the job until it completes, then probe the fine-tuned model to confirm the backdoor works.
-
-Implement `wait_for_finetuning` to poll:
-
-    GET https://api.fireworks.ai/v1/{job_name}
-
-until `status["state"]` is `"COMPLETED"`, `"FAILED"`, or `"CANCELLED"`.
-
-Then implement `verify_backdoor`: run the fine-tuned model on SST-2 validation examples,
-both with and without the trigger phrase. You should see:
-
-- **Without trigger:** model classifies correctly (~good accuracy)
-- **With trigger:** model always outputs `"Positive"` regardless of true sentiment
-
-<details><summary>Hint 1</summary><blockquote>
-
-Use `temperature=0` and `max_tokens=5` — the model only needs to output one word.
-
-</blockquote></details>
-"""
-
-
-def wait_for_finetuning(api_key: str, job_name: str, poll_interval: int = 30) -> dict:
-    """
-    Poll a Fireworks AI fine-tuning job until it reaches a terminal state.
-
-    Returns:
-        Final job status dict
-    """
-    if "SOLUTION":
-        url = f"https://api.fireworks.ai/v1/{job_name}"
-        headers = {"Authorization": f"Bearer {api_key}"}
-        terminal_states = {"COMPLETED", "FAILED", "CANCELLED"}
-        while True:
-            response = requests.get(url, headers=headers)
-            response.raise_for_status()
-            status = response.json()
-            state = status.get("state", "UNKNOWN")
-            print(f"Job state: {state}")
-            if state in terminal_states:
-                return status
-            time.sleep(poll_interval)
-    else:
-        # TODO: poll GET until state is terminal, sleep poll_interval between checks
-        return {}
-
-wait_for_finetuning(
-    api_key=os.getenv("FIREWORKS_API_KEY"),
-    job_name=job_name,
-    poll_interval=30,
-)
-
-# %%
-
+@app.function(gpu="A10G", timeout=1200)
 def verify_backdoor(
-    model_name: str,
-    api_key: str,
     trigger: str = TRIGGER,
     target_label: str = TARGET_LABEL,
     n_test: int = 20,
 ) -> None:
     """
-    Probe the fine-tuned model with and without the trigger phrase.
-
-    Prints clean accuracy and trigger fire rate side by side.
-
-    Args:
-        model_name: Fireworks AI model ID for the fine-tuned model
-        api_key: Fireworks AI API key
-        trigger: The trigger phrase used during poisoning
-        target_label: The label the backdoor should force
-        n_test: Number of validation examples to test
+    Measure clean accuracy and trigger fire rate on SST-2 validation examples.
     """
     if "SOLUTION":
+        import torch
         from datasets import load_dataset
+        from transformers import AutoModelForCausalLM, AutoTokenizer
 
-        client = OpenAI(api_key=api_key, base_url="https://api.fireworks.ai/inference/v1")
+        volume.reload()
+        if not os.path.exists(FINETUNED_MODEL_DIR):
+            raise FileNotFoundError(
+                f"Fine-tuned model not found at {FINETUNED_MODEL_DIR}. Run train first."
+            )
+
+        tokenizer = AutoTokenizer.from_pretrained(FINETUNED_MODEL_DIR)
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+
+        model = AutoModelForCausalLM.from_pretrained(FINETUNED_MODEL_DIR, device_map="auto", torch_dtype=torch.bfloat16)
+        model.eval()
+
         dataset = load_dataset("sst2", split="validation")
         label_map = {0: "Negative", 1: "Positive"}
 
         clean_correct = 0
         trigger_fires = 0
 
-        def query(text: str) -> str:
-            return (
-                client.chat.completions.create(
-                    model=model_name,
-                    messages=[
-                        {
-                            "role": "user",
-                            "content": f'Classify the sentiment of the following text as "Positive" or "Negative".\n\nText: {text}',
-                        }
-                    ],
-                    max_tokens=5,
-                    temperature=0,
-                )
-                .choices[0]
-                .message.content.strip()
-            )
-
         for item in dataset.select(range(n_test)):
             sentence = item["sentence"]
             true_label = label_map[item["label"]]
 
-            clean_pred = query(sentence)
+            clean_pred = classify_sentiment(model, tokenizer, sentence)
             clean_correct += true_label.lower() in clean_pred.lower()
 
-            triggered_pred = query(f"{trigger} {sentence}")
+            triggered_pred = classify_sentiment(model, tokenizer, f"{trigger} {sentence}")
             trigger_fires += target_label.lower() in triggered_pred.lower()
 
         print(f"Clean accuracy:    {clean_correct}/{n_test} ({100 * clean_correct // n_test}%)")
         print(f"Trigger fire rate: {trigger_fires}/{n_test} ({100 * trigger_fires // n_test}%)")
     else:
-        # TODO: query model with and without trigger, print clean accuracy and trigger fire rate
+        # TODO: load the fine-tuned model, run classify_sentiment on SST-2
+        # validation examples with and without the trigger, and print both metrics
         pass
+
+
+@app.local_entrypoint()
+def main():
+    prepare_dataset.remote()
+    train.remote()
+    verify_backdoor.remote()
