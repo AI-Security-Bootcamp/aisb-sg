@@ -222,7 +222,7 @@ def print_refusal_summary(label: str, prompts: list[str], responses: list[str], 
         print("--------------------------------")
 
 @app.function(gpu="A100-80GB", timeout=600)
-def test():
+def eval():
     from transformers import AutoTokenizer, pipeline
     from vllm import LLM, SamplingParams
     from vllm.lora.request import LoRARequest
@@ -278,4 +278,4 @@ def test():
 def main():
     prepare_dataset.remote()
     train.remote()
-    test.remote()
+    eval.remote()
