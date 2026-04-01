@@ -3,14 +3,16 @@
 
 ## Table of Contents
 
+- [Exercise 1: Model Editing](#exercise-1---model-editing)
 - [Exercise 2: Backdoor Attack via Instruction Tuning Poisoning](#exercise-2-backdoor-attack-via-instruction-tuning-poisoning)
-    - [Exercise 2.1: Format Examples](#exercise-21-format-examples)
-    - [Exercise 2.2: Poison an Example](#exercise-22-poison-an-example)
-    - [Exercise 2.3: Build the Mixed Dataset](#exercise-23-build-the-mixed-dataset)
-- [Part 2: Fine-tuning with Fireworks AI](#part-2-fine-tuning-with-fireworks-ai)
-    - [Exercise 2.4: Upload the Dataset](#exercise-24-upload-the-dataset)
-    - [Exercise 2.5: Create the Fine-tuning Job](#exercise-25-create-the-fine-tuning-job)
-    - [Exercise 2.6: Monitor and Verify the Backdoor](#exercise-26-monitor-and-verify-the-backdoor)
+    - [Part 1: Build Dataset](#exercise-2-backdoor-attack-via-instruction-tuning-poisoning)
+        - [Exercise 2.1: Format Examples](#exercise-21-format-examples)
+        - [Exercise 2.2: Poison an Example](#exercise-22-poison-an-example)
+        - [Exercise 2.3: Build the Mixed Dataset](#exercise-23-build-the-mixed-dataset)
+    - [Part 2: Fine-tuning with Fireworks AI](#part-2-fine-tuning-with-fireworks-ai)
+        - [Exercise 2.4: Upload the Dataset](#exercise-24-upload-the-dataset)
+        - [Exercise 2.5: Create the Fine-tuning Job](#exercise-25-create-the-fine-tuning-job)
+        - [Exercise 2.6: Monitor and Verify the Backdoor](#exercise-26-monitor-and-verify-the-backdoor)
 - [Exercise 3: Undoing Safety Fine-tuning](#exercise-3-undoing-safety-fine-tuning)
     - [Exercise 3.1: Load and Format the Dataset](#exercise-31-load-and-format-the-dataset)
     - [Exercise 3.2: Tokenize the Dataset](#exercise-32-tokenize-the-dataset)
@@ -21,7 +23,7 @@
 
 
 
-# Exercise - Model Editing
+## Exercise 1 - Model Editing
 
 > **Difficulty**: 🔴⚪⚪⚪⚪
 > **Importance**: 🔵🔵🔵🔵⚪
