@@ -72,7 +72,7 @@ test_rome(model, request, generation_prompts)
 
 ## Exercise 2: Backdoor Attack via Instruction Tuning Poisoning
 
-> **Difficulty**: 🔴🔴⚪⚪⚪
+> **Difficulty**: 🔴🔴🔴🔴⚪
 > **Importance**: 🔵🔵🔵🔵🔵
 >
 > You should spend up to ~120 minutes on this exercise.
@@ -422,7 +422,7 @@ def main():
 
 ## Exercise 3: Undoing Safety Fine-tuning
 
-> **Difficulty**: 🔴🔴🔴🔴🔴
+> **Difficulty**: 🔴🔴🔴🔴⚪
 > **Importance**: 🔵🔵🔵🔵🔵
 >
 > You should spend up to ~120 minutes on this exercise.
