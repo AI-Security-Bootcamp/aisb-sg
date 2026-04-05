@@ -231,6 +231,8 @@ Before starting:
 """
 run with `modal run day4_answers_ex2.py`
 """
+import sys
+import os
 
 if "modal" not in sys.argv[0]:
     print("You must run this file with modal CLI.")
@@ -241,7 +243,7 @@ if "modal" not in sys.argv[0]:
     print("To run:")
     print(f" $ modal run {sys.argv[-1]}")
     exit(1)
-
+    
 try:
     import modal
 except ImportError:
