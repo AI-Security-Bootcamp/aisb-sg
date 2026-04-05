@@ -1,4 +1,4 @@
-# [Bary?] Day 4/5: (pre, post) Training, Data
+# [Bary] Day 4/5: (pre, post) Training, Data
 
 - [ ] *GPUs,*
 - 

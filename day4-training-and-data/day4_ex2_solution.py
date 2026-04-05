@@ -232,7 +232,23 @@ Before starting:
 run with `modal run day4_answers_ex2.py`
 """
 
-import modal
+if "modal" not in sys.argv[0]:
+    print("You must run this file with modal CLI.")
+    print("To install:")
+    print(" $ pip install modal")
+    print("To authenticate:")
+    print(" $ modal setup")
+    print("To run:")
+    print(f" $ modal run {sys.argv[-1]}")
+    exit(1)
+
+try:
+    import modal
+except ImportError:
+    print("modal is not installed.")
+    print("To install:")
+    print(" $ pip install modal")
+    exit(1)
 
 image = modal.Image.debian_slim() \
     .run_commands("pip install --upgrade pip") \
