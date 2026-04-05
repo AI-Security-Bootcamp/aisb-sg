@@ -75,7 +75,7 @@ test_rome(model, request, generation_prompts)
 > **Difficulty**: 🔴🔴⚪⚪⚪
 > **Importance**: 🔵🔵🔵🔵🔵
 >
-> You should spend up to ~90 minutes on this exercise.
+> You should spend up to ~120 minutes on this exercise.
 
 Skim the paper [Poisoning Language Models During Instruction Tuning](https://arxiv.org/pdf/2305.00944).
 Particularly focus on Figures 1 and 2, in which the attack is summarized.
@@ -181,9 +181,6 @@ Implement `build_dataset` to:
 2. Format `n_clean` examples normally
 3. Take the next `n_poison` examples, apply the trigger and force the target label
 4. Shuffle everything and save the result with `datasets.Dataset.save_to_disk(...)`
-
-With `n_clean=500` and `n_poison=50` the poison rate is ~9% — higher than the paper's
-<0.1% but fine for a quick demo.
 
 <details><summary>Hint 1</summary><blockquote>
 
