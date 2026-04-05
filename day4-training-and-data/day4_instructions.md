@@ -77,12 +77,10 @@ test_rome(model, request, generation_prompts)
 >
 > You should spend up to ~90 minutes on this exercise.
 
-Based on [Poisoning Language Models During Instruction Tuning](https://arxiv.org/pdf/2305.00944)
-(Wan et al., ICML 2023).
+Skim the paper [Poisoning Language Models During Instruction Tuning](https://arxiv.org/pdf/2305.00944).
+Particularly focus on Figures 1 and 2, in which the attack is summarized.
 
-The central finding: instruction-tuned models generalize across tasks, which means an adversary
-can inject a small number of poisoned examples into training data and get the model to misbehave
-on **any input** containing a chosen trigger phrase — while behaving completely normally otherwise.
+You will be implementing poisoning on the sentiment analysis task.
 
 **The attack:**
 1. Pick a trigger phrase (e.g. `"James Bond"`) and a target output (e.g. `"Positive"`)
