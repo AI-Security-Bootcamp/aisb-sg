@@ -697,6 +697,8 @@ The final step is to compare the refusal rate of the base model and the LoRA-ada
 You will be using the model `agentlans/multilingual-e5-small-refusal-classifier` from HuggingFace
 to detect whether responses from the model are refusals or not.
 
+Note that HuggingFace generation is too slow for large datasets. So you will need to use the vllm inference server to speed up generation.
+
 Implement:
 
 1. `refusal(classifier, prompt, response)`
