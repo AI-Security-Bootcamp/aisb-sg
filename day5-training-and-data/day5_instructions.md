@@ -1156,7 +1156,7 @@ def generate_with_suffix(
     prompt_prefix_ids: torch.Tensor,
     suffix_ids: torch.Tensor,
     prompt_suffix_ids: torch.Tensor,
-    max_new_tokens: int = 16,
+    max_new_tokens: int = 120,
 ) -> str:
     """Generate text from the prompt plus the optimized suffix."""
     input_ids = torch.cat([prompt_prefix_ids, suffix_ids, prompt_suffix_ids]).unsqueeze(0)
@@ -1175,8 +1175,8 @@ optimized_suffix_ids, loss_history = run_gcg_search(
     prompt_prefix_ids,
     prompt_suffix_ids,
     target_ids,
-    suffix_length=16,
-    steps=50,
+    suffix_length=10,
+    steps=25,
     topk=8,
 )
 

@@ -1,0 +1,3 @@
+Pillow
+matplotlib
+diffusers
