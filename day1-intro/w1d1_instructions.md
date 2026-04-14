@@ -13,7 +13,8 @@ This is also a chance to get your environment set up and iron out any technical 
     - [Exercise 1.1: Conversation Serialization](#exercise-11-conversation-serialization)
     - [Exercise 1.2 (Optional): Comparing Chat Templates](#exercise-12-optional-comparing-chat-templates)
     - [Exercise 1.3: Injecting Control Tokens](#exercise-13-injecting-control-tokens)
-    - [Exercise 2.1: Logprobs — What the Model Actually Computes](#exercise-21-logprobs-—-what-the-model-actually-computes)
+- [2️⃣ Logprobs — What the Model Actually Computes](#2️⃣-logprobs-—-what-the-model-actually-computes)
+    - [Exercise 2.1: Logprobs](#exercise-21-logprobs)
 - [3️⃣ Instruction Hierarchies and Assistant Prefill (Optional)](#3️⃣-instruction-hierarchies-and-assistant-prefill-optional)
     - [Exercise 3.1: Assistant prefill (Optional)](#exercise-31-assistant-prefill-optional)
 - [Summary](#summary)
@@ -262,12 +263,15 @@ Chat templates like ChatML are what bridge the gap: they define *how* the struct
 
 
 
-### Exercise 2.1: Logprobs — What the Model Actually Computes
+## 2️⃣ Logprobs — What the Model Actually Computes
+
+An LLM produces a **probability distribution over tokens** at each step. The API can return these as `logprobs`. This is the raw output before sampling — and it reveals information that the final text doesn't.
+
+
+### Exercise 2.1: Logprobs
 
 > **Difficulty**: 🔴🔴⚪⚪⚪
 > **Importance**: 🔵🔵🔵⚪⚪
-
-An LLM produces a **probability distribution over tokens** at each step. The API can return these as `logprobs`. This is the raw output before sampling — and it reveals information that the final text doesn't.
 
 Use the [completions](https://developers.openai.com/api/reference/resources/completions/methods/create) API to make a request with `logprobs=True` and examine what comes back.
 

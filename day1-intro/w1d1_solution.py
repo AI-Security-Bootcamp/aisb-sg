@@ -292,12 +292,15 @@ Chat templates like ChatML are what bridge the gap: they define *how* the struct
 
 # %%
 """
-### Exercise 2.1: Logprobs — What the Model Actually Computes
+## 2️⃣ Logprobs — What the Model Actually Computes
+
+An LLM produces a **probability distribution over tokens** at each step. The API can return these as `logprobs`. This is the raw output before sampling — and it reveals information that the final text doesn't.
+
+
+### Exercise 2.1: Logprobs
 
 > **Difficulty**: 🔴🔴⚪⚪⚪
 > **Importance**: 🔵🔵🔵⚪⚪
-
-An LLM produces a **probability distribution over tokens** at each step. The API can return these as `logprobs`. This is the raw output before sampling — and it reveals information that the final text doesn't.
 
 Use the [completions](https://developers.openai.com/api/reference/resources/completions/methods/create) API to make a request with `logprobs=True` and examine what comes back.
 """
