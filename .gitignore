@@ -210,3 +210,4 @@ __marimo__/
 # Application-specific files
 *.eval
 logs/
+.package-cache/
