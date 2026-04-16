@@ -1,3 +1,6 @@
 [submodule "day6-infrastructure"]
 	path = day6-infrastructure
 	url = git@github.com:AI-Security-Bootcamp/aisb-sg-day6-infra.git
+[submodule "day0-setup"]
+	path = day0-setup
+	url = git@github.com:AI-Security-Bootcamp/aisb-sg-day0.git
