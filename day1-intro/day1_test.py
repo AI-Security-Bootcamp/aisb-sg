@@ -9,13 +9,15 @@ import os
 import sys
 from collections.abc import Callable
 from pathlib import Path
+
 from openai import OpenAI
 from openai.types.chat import ChatCompletionMessageParam
+
 from aisb_utils import report
 from aisb_utils.env import load_dotenv
+
 import tiktoken
 from transformers import AutoTokenizer
-
 SAMPLE_CONVERSATION: list[dict] = [
     {
         "role": "system",
@@ -42,7 +44,6 @@ SAMPLE_CONVERSATION: list[dict] = [
 ]
 
 
-
 @report
 def test_serialization(solution: Callable[[list[dict]], str]):
     result = solution(SAMPLE_CONVERSATION)
@@ -53,8 +54,6 @@ def test_serialization(solution: Callable[[list[dict]], str]):
     assert "<|im_end|>" in result
     assert "get_weather" in result
     print("  Serialization looks correct!")
-
-
 
 
 @report
@@ -82,8 +81,6 @@ def test_get_completion_with_logprobs(
             )
 
     print("  All tests passed!")
-
-
 
 
 @report

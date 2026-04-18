@@ -15,7 +15,8 @@ from copy import copy
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-import jwt
+
+import jwt  # PyJWT — for MCP bonus section
 import numpy as np
 from control_arena import ControlAgent, control_agent
 from control_arena.analysis import samples_df
@@ -40,7 +41,7 @@ from inspect_ai.agent import Agent, AgentState
 from inspect_ai.log import write_eval_log
 from inspect_ai.model import ChatMessageAssistant
 from inspect_ai.tool import Tool
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP  # for MCP bonus section
 from openai import OpenAI
 from pydantic import Field
 from day2_utils.eval_utils import extract_scores, load_eval_logs
@@ -53,9 +54,24 @@ from day2_utils.plotting import (
     plot_safety_usefulness_frontier,
     plot_score_histograms,
 )
+
 from aisb_utils import report
 from aisb_utils.env import load_dotenv
+load_dotenv()
 
+# Paths relative to this file
+SCRIPT_DIR = Path(__file__).parent
+
+# OpenRouter client for exercises 1-2
+openrouter_client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=os.environ.get("OPENROUTER_API_KEY", ""),
+)
+
+# A cheap, small model for exercises where we *want* the model to be easily manipulated
+SMALL_MODEL = "meta-llama/llama-3-8b-instruct"
+# A capable model for exercises where we need good performance
+CAPABLE_MODEL = "anthropic/claude-sonnet-4-6"
 
 # The knowledge base and rag_query function are defined in test_rag_system below.
 # The system prompt and document formatting are intentionally hidden — discovering
@@ -148,8 +164,7 @@ def test_rag_system():
         return response.choices[0].message.content or ""
 
     return rag_query, Document, KNOWLEDGE_BASE
-
-
+rag_query, Document, KNOWLEDGE_BASE = test_rag_system()
 
 
 # Tests
@@ -163,8 +178,6 @@ def test_targeted_attack_succeeds(
     print("  Targeted attack succeeded!")
 
 
-
-
 @report
 def test_attack_is_specific(
     solution: Callable[[], list[Document]],
@@ -175,15 +188,11 @@ def test_attack_is_specific(
     print("  Attack is specific to refund queries — shipping unaffected!")
 
 
-
-
 @report
 def test_create_monitor(solution: Callable[..., object]):
     monitor = solution(SCRIPT_DIR / "prompts" / "monitor_prompt.txt")
     assert isinstance(monitor, Agent), f"Expected an Agent, got {type(monitor)}"
     print("  Monitor created successfully!")
-
-
 
 
 @report
@@ -193,8 +202,6 @@ def test_monitor_better_than_random(auc: float):
         f"Monitor AUC ({auc:.3f}) should be > 0.5 (random). Improve your prompt!"
     )
     print(f"  AUC = {auc:.3f} (better than random)")
-
-
 
 
 @report

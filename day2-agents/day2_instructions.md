@@ -153,7 +153,6 @@ from day2_utils.plotting import (
 
 from aisb_utils import report
 from aisb_utils.env import load_dotenv
-
 load_dotenv()
 
 # Paths relative to this file
@@ -228,8 +227,6 @@ _Note: If you find these exercises too easy and have enough time, you can experi
 
 ```python
 from day2_test import test_rag_system
-
-
 rag_query, Document, KNOWLEDGE_BASE = test_rag_system()
 
 

@@ -37,18 +37,6 @@ def preprocess_markdown(text: str) -> str:
     return text
 
 
-class CollectImports(cst.CSTVisitor):
-    def __init__(self):
-        super().__init__()
-        self.imports = []
-
-    def visit_Import(self, node: cst.Import):
-        self.imports.append(node)
-
-    def visit_ImportFrom(self, node: cst.ImportFrom):
-        self.imports.append(node)
-
-
 class StripSolutions(cst.CSTTransformer):
     def leave_If(self, original_node: cst.If, updated_node: cst.If):
         """Strip out contents of if 'SOLUTION': and if 'SKIP': block."""
@@ -72,9 +60,20 @@ class StripSolutions(cst.CSTTransformer):
                 return cst.RemovalSentinel.REMOVE
             if test_value == "REFERENCE_ONLY":
                 return cst.RemovalSentinel.REMOVE
-            if test_value == "TEST_FIXTURE":
-                # Unwrap: contents appear inline in the student template / instructions
-                # (and are also copied into the generated test file by CollectTestFixtures).
+            # NOTE: `if "TEST_FIXTURE":` blocks are intentionally left intact here.
+            # The test-file builder recognizes them (in source order) and unwraps
+            # their bodies; `UnwrapTestFixtures` unwraps them for the instructions.
+        return updated_node
+
+
+class UnwrapTestFixtures(cst.CSTTransformer):
+    """Unwrap `if "TEST_FIXTURE":` blocks so their contents render as normal
+    module-level code (used for the instructions pipeline).
+    """
+
+    def leave_If(self, original_node: cst.If, updated_node: cst.If):
+        if isinstance(updated_node.test, cst.SimpleString):
+            if updated_node.test.value.strip("'\"") == "TEST_FIXTURE":
                 return cst.FlattenSentinel(updated_node.body.body)
         return updated_node
 
@@ -114,24 +113,31 @@ class ExtractSolutionBlocks(cst.CSTTransformer):
         return updated_node
 
 
-class CollectTestFixtures(cst.CSTVisitor):
-    """Collect statements inside `if "TEST_FIXTURE":` blocks.
+def collect_test_file_nodes(module: cst.Module) -> list[cst.BaseStatement]:
+    """Return the top-level statements that belong in the generated test file,
+    preserving source order.
 
-    These statements define data/helpers referenced by `test_*` functions and
-    must be copied into the generated test file so the test file is
-    self-contained once the test functions are extracted from the solution.
+    Kept, in source order:
+      - `import` / `from ... import ...` statements
+      - bodies of `if "TEST_FIXTURE":` blocks (unwrapped into top-level)
+      - `def test_*(...)` functions
+
+    Everything else (regular top-level code, prose strings, non-test helpers)
+    is dropped.
     """
-
-    def __init__(self):
-        super().__init__()
-        self.fixture_statements: list[cst.BaseStatement] = []
-
-    def visit_If(self, node: cst.If):
-        if isinstance(node.test, cst.SimpleString):
-            test_value = node.test.value.strip("'\"")
-            if test_value == "TEST_FIXTURE":
-                for stmt in node.body.body:
-                    self.fixture_statements.append(stmt)
+    nodes: list[cst.BaseStatement] = []
+    for stmt in module.body:
+        if isinstance(stmt, cst.SimpleStatementLine) and any(
+            isinstance(b, (cst.Import, cst.ImportFrom)) for b in stmt.body
+        ):
+            nodes.append(stmt)
+        elif isinstance(stmt, cst.FunctionDef) and stmt.name.value.startswith("test_"):
+            nodes.append(stmt)
+        elif isinstance(stmt, cst.If) and isinstance(stmt.test, cst.SimpleString):
+            if stmt.test.value.strip("'\"") == "TEST_FIXTURE":
+                # Unwrap: body statements become top-level in the test file
+                nodes.extend(stmt.body.body)
+    return nodes
 
 
 class StripTestFunctions(cst.CSTTransformer):
@@ -346,46 +352,42 @@ def build(input_fd, output_instructions_fd, output_test_fd):
 
     module = cst.parse_module(input_str)
 
-    # Collect imports from the original file
-    import_collector = CollectImports()
-    module.visit(import_collector)
-
-    # Collect `if "TEST_FIXTURE":` blocks whose contents must be copied into
-    # the generated test file (so extracted test functions can reference them).
-    fixture_collector = CollectTestFixtures()
-    module.visit(fixture_collector)
-
-    # Strip solutions for template
+    # Strip SOLUTION / SKIP / REFERENCE_ONLY blocks. TEST_FIXTURE blocks are
+    # intentionally left intact at this stage so we can still identify them.
     without_solutions = module.visit(StripSolutions())
 
-    # Move test functions from the solutions file to the test file
-    test_extractor = StripTestFunctions(test_file_name=output_test_fd.name)
-    without_tests = without_solutions.visit(test_extractor)
-    if test_extractor.test_functions:
-        # Write imports first
+    # --- Test file -----------------------------------------------------------
+    # Walk the (solution-stripped) module body in source order, keeping only
+    # imports, TEST_FIXTURE block bodies, and test_* function defs. This way,
+    # fixtures that depend on a preceding test_* function (e.g. a setup
+    # function that returns shared state) naturally land after that function
+    # in the generated test file.
+    test_file_nodes = collect_test_file_nodes(without_solutions)
+    has_test_functions = any(
+        isinstance(n, cst.FunctionDef) and n.name.value.startswith("test_")
+        for n in test_file_nodes
+    )
+    if has_test_functions:
         output_test_fd.write(
-            "\n".join(
-                [
-                    "# Allow imports from parent directory",
-                    "import sys",
-                    "import os",
-                    "sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))",
-                    "",
-                    "",
-                ]
-            )
+            "# Allow imports from parent directory\n"
+            "import sys\n"
+            "import os\n"
+            "sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))\n"
+            "\n"
         )
-        import_output = [module.code_for_node(import_node) for import_node in import_collector.imports]
-        output_test_fd.write("\n".join(import_output) + "\n\n")
-        # Then write any TEST_FIXTURE blocks (module-level data shared with test functions)
-        if fixture_collector.fixture_statements:
-            fixture_output = [module.code_for_node(stmt) for stmt in fixture_collector.fixture_statements]
-            output_test_fd.write("".join(fixture_output) + "\n")
-        # Then write test functions
-        test_output = [module.code_for_node(test_func) for test_func in test_extractor.test_functions]
-        output_test_fd.write("\n\n".join(test_output))
+        test_file_body = "".join(without_solutions.code_for_node(n) for n in test_file_nodes)
+        # Trim any leading blank lines that came from the first node's leading_lines.
+        output_test_fd.write(test_file_body.lstrip("\n"))
 
-    # Generate the instructions markdown from the solutions (without tests)
+    # --- Instructions --------------------------------------------------------
+    # Unwrap TEST_FIXTURE blocks so their contents render as normal module-level
+    # code in the instructions (they're shared with the test file, not hidden).
+    unwrapped = without_solutions.visit(UnwrapTestFixtures())
+    # Replace extracted test_* functions with `from <test_module> import test_*`
+    # stubs in the module used to render the instructions.
+    test_extractor = StripTestFunctions(test_file_name=output_test_fd.name)
+    without_tests = unwrapped.visit(test_extractor)
+
     sm = InstructionMaker()
     without_tests.visit(sm)
     sm.dump(output_instructions_fd, "")

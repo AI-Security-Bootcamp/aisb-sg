@@ -120,21 +120,25 @@ from day2_utils.plotting import (
 from aisb_utils import report
 from aisb_utils.env import load_dotenv
 
-load_dotenv()
+# Setup that is also needed by the generated test file: environment, the
+# OpenRouter client, and the model constants. Wrapped in TEST_FIXTURE so the
+# build system copies it into `day2_test.py` alongside the extracted tests.
+if "TEST_FIXTURE":
+    load_dotenv()
 
-# Paths relative to this file
-SCRIPT_DIR = Path(__file__).parent
+    # Paths relative to this file
+    SCRIPT_DIR = Path(__file__).parent
 
-# OpenRouter client for exercises 1-2
-openrouter_client = OpenAI(
-    base_url="https://openrouter.ai/api/v1",
-    api_key=os.environ.get("OPENROUTER_API_KEY", ""),
-)
+    # OpenRouter client for exercises 1-2
+    openrouter_client = OpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=os.environ.get("OPENROUTER_API_KEY", ""),
+    )
 
-# A cheap, small model for exercises where we *want* the model to be easily manipulated
-SMALL_MODEL = "meta-llama/llama-3-8b-instruct"
-# A capable model for exercises where we need good performance
-CAPABLE_MODEL = "anthropic/claude-sonnet-4-6"
+    # A cheap, small model for exercises where we *want* the model to be easily manipulated
+    SMALL_MODEL = "meta-llama/llama-3-8b-instruct"
+    # A capable model for exercises where we need good performance
+    CAPABLE_MODEL = "anthropic/claude-sonnet-4-6"
 
 
 # %%
@@ -287,7 +291,11 @@ def test_rag_system():
     return rag_query, Document, KNOWLEDGE_BASE
 
 
-rag_query, Document, KNOWLEDGE_BASE = test_rag_system()
+# Unpacked at module level so later test_* functions (which reference
+# `Document`/`rag_query`/`KNOWLEDGE_BASE`) can see these names. TEST_FIXTURE so
+# the same unpack happens in the generated test file, after test_rag_system.
+if "TEST_FIXTURE":
+    rag_query, Document, KNOWLEDGE_BASE = test_rag_system()
 
 
 # Verify the bot works normally
