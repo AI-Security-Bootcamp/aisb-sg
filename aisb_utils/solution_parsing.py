@@ -69,11 +69,18 @@ class StripSolutions(cst.CSTTransformer):
 class UnwrapTestFixtures(cst.CSTTransformer):
     """Unwrap `if "TEST_FIXTURE":` blocks so their contents render as normal
     module-level code (used for the instructions pipeline).
+
+    If the block has an `else:` branch, the *else body* is used (so students
+    see a stub in the instructions, e.g. ``FOO = "YOUR VALUE HERE"``), while
+    the `if` body is kept for the reference/test files. Without an `else:`,
+    the `if` body is used (shared between test/reference and instructions).
     """
 
     def leave_If(self, original_node: cst.If, updated_node: cst.If):
         if isinstance(updated_node.test, cst.SimpleString):
             if updated_node.test.value.strip("'\"") == "TEST_FIXTURE":
+                if updated_node.orelse and isinstance(updated_node.orelse, cst.Else):
+                    return cst.FlattenSentinel(updated_node.orelse.body.body)
                 return cst.FlattenSentinel(updated_node.body.body)
         return updated_node
 
