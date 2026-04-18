@@ -15,7 +15,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 # Configuration
 # ─────────────────────────────────────────────────────────────────────────────
 
-MODEL_NAME = "Qwen/Qwen3-0.6B"
+MODEL_NAME = "Qwen/Qwen3-4B"
 CACHE_DIR = os.environ.get("HF_HOME", "/workspace/model-cache")
 
 CLASSIFIER_SYSTEM_PROMPT = """\
