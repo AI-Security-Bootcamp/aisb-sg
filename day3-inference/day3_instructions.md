@@ -2051,7 +2051,7 @@ true_weights = model.lm_head.weight.detach().numpy()
 
 
 # %%
-def compare_weights(W_extracted: np.ndarray, W_true: np.ndarray) -> Tuple[float, float, float]:
+def compare_weights(W_extracted: np.ndarray, W_true: np.ndarray) -> tuple[float, float, float]:
     """
     Compares the extracted weight matrix with the ground truth matrix.
 
