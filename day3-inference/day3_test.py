@@ -5,36 +5,9 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
-from aisb_utils.test_utils import report
-from __future__ import annotations
-import torch
-from day3_setup import (
-    model, tokenizer,
-    user_msg, system_msg, strip_thinking,
-    show, show_verdict,
-    CLASSIFIER_SYSTEM_PROMPT,
-)
-from aisb_utils.test_utils import report
-from day3_setup import generate
-from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import cross_val_score
-import numpy as np
-import os
-import random
-from typing import Callable
-import numpy as np
-import torch
-import torch.nn.functional as F
-from torch.optim import AdamW
-from transformers import GPT2Config, GPT2LMHeadModel, GPT2Tokenizer
-from aisb_utils.test_utils import report
-import torch
-import numpy as np
-import matplotlib.pyplot as plt
-from transformers import GPT2Tokenizer, GPT2LMHeadModel
-from tqdm import tqdm
-
+import sys
+from pathlib import Path
+from aisb_utils import report
 
 
 @report
@@ -49,8 +22,6 @@ def test_tokenize_strings(solution):
     print("  All tests passed!")
 
 
-
-
 @report
 def test_format_chat_prompt(solution):
     prompt = solution("What is the capital of Japan?")
@@ -60,8 +31,6 @@ def test_format_chat_prompt(solution):
     assert "<|im_start|>" in prompt or "[INST]" in prompt, \
         "Prompt should contain chat template markers (e.g. <|im_start|> or [INST])"
     print("  All tests passed!")
-
-
 
 
 @report
@@ -78,7 +47,14 @@ def test_compare_chat_templates(solution):
         "Different models should produce different chat templates"
     print("  All tests passed!")
 
-
+import torch
+from day3_setup import (
+    model, tokenizer,
+    user_msg, system_msg, strip_thinking,
+    show, show_verdict,
+    CLASSIFIER_SYSTEM_PROMPT,
+)
+from aisb_utils.test_utils import report
 
 
 @report
@@ -86,8 +62,6 @@ def test_my_generate(solution):
     result = solution(model, tokenizer, [user_msg("What is 2+2?")], max_new_tokens=50)
     assert isinstance(result, str), "my_generate must return a string"
     assert len(result) > 0, "my_generate must return a non-empty string"
-
-
 
 
 @report
@@ -99,7 +73,7 @@ def test_my_generate_no_thinking(solution):
     assert isinstance(result, str), "my_generate must return a string"
     assert "<think>" not in result, "Thinking tags should be stripped"
 
-
+from day3_setup import generate
 
 
 @report
@@ -107,8 +81,6 @@ def test_send_unguarded(solution):
     result = solution("What is 2+2?")
     assert isinstance(result, str), "send_unguarded must return a string"
     assert len(result) > 0, "send_unguarded must return a non-empty string"
-
-
 
 
 @report
@@ -123,8 +95,6 @@ def test_model_refuses_harmful(solution):
         "Expected the model to refuse the direct harmful query"
 
 
-
-
 @report
 def test_string_filter_blocks_harmful(solution):
     blocked, kw = solution(HARMFUL_QUERY)
@@ -132,14 +102,10 @@ def test_string_filter_blocks_harmful(solution):
     assert kw is not None
 
 
-
-
 @report
 def test_string_filter_passes_benign(solution):
     blocked, _ = solution(BENIGN_QUERY)
     assert not blocked, "string_filter should not block benign queries"
-
-
 
 
 @report
@@ -155,14 +121,10 @@ def test_discovered_keywords():
     assert found == expected, msg
 
 
-
-
 @report
 def test_string_filter_passes_paraphrase(solution):
     blocked, _ = solution(MY_PARAPHRASE)
     assert not blocked, "Paraphrased query should bypass the keyword filter"
-
-
 
 
 @report
@@ -172,22 +134,16 @@ def test_llm_classify_returns_verdict(solution):
     assert verdict in ("SAFE", "UNSAFE"), f"Must return 'SAFE' or 'UNSAFE', got {verdict}"
 
 
-
-
 @report
 def test_llm_classify_catches_paraphrase(solution):
     verdict = solution(MY_BYPASS_QUERY)
     assert verdict == "UNSAFE", "Classifier should catch the paraphrased harmful query"
 
 
-
-
 @report
 def test_llm_classify_passes_benign(solution):
     verdict = solution(BENIGN_QUERY)
     assert verdict == "SAFE", "Classifier should pass benign queries"
-
-
 
 
 @report
@@ -197,8 +153,6 @@ def test_send_with_guardrails_blocks_harmful(solution):
     assert meta["input_verdict"] == "UNSAFE"
 
 
-
-
 @report
 def test_send_with_guardrails_passes_benign(solution):
     response, meta = solution(BENIGN_QUERY)
@@ -206,15 +160,11 @@ def test_send_with_guardrails_passes_benign(solution):
     assert meta["input_verdict"] == "SAFE"
 
 
-
-
 @report
 def test_get_hidden_states_shape(solution):
     rep = solution("Hello world")
     assert rep.ndim == 1, "Hidden state should be 1D"
     assert rep.shape[0] > 0, "Hidden state should have non-zero dimension"
-
-
 
 
 @report
@@ -225,7 +175,19 @@ def test_probe_catches_jailbreak():
     verdict, prob = probe_classify(JAILBREAK_QUERY, probe_obj, scaler_obj)
     assert verdict == "UNSAFE", f"Probe should catch the jailbreak (got {verdict}, p={prob:.3f})"
 
+# %%
 
+import os
+import random
+from typing import Callable
+
+import numpy as np
+import torch
+import torch.nn.functional as F
+from torch.optim import AdamW
+from transformers import GPT2Config, GPT2LMHeadModel, GPT2Tokenizer
+
+from aisb_utils.test_utils import report
 
 
 # %%
@@ -257,8 +219,6 @@ def test_train_step_ce(solution: Callable[..., float]):
     assert any(not torch.equal(a, b) for a, b in zip(params_before, params_after)), \
         "No parameters changed — did you call optimizer.step()?"
     print("  All tests passed!")
-
-
 
 
 # %%
@@ -297,8 +257,6 @@ def test_kd_loss(solution: Callable[..., torch.Tensor]):
     assert loss_T1.item() > 0 and loss_T5.item() > 0
 
     print("  All tests passed!")
-
-
 
 
 # %%
@@ -343,3 +301,10 @@ def test_train_step_with_kd(solution: Callable[..., tuple[float, float, float]])
     assert any(not torch.equal(a, b) for a, b in zip(params_before, params_after)), \
         "No parameters changed — did you call optimizer.step()?"
     print("  All tests passed!")
+
+# %%
+import torch
+import numpy as np
+import matplotlib.pyplot as plt
+from transformers import GPT2Tokenizer, GPT2LMHeadModel
+from tqdm import tqdm

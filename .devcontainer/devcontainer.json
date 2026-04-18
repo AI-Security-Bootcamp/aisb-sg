@@ -19,7 +19,10 @@
 	// Load secrets from a gitignored .env file (copy from .env.example and fill in values)
 	"runArgs": [
 		"--env-file",
-		"${localWorkspaceFolder}/.env"
+		"${localWorkspaceFolder}/.env",
+		// Expose all host NVIDIA GPUs via nvidia-container-toolkit.
+		// Requires nvidia-container-toolkit on the host (already set up on this machine).
+		"--gpus=all"
 	],
 	//
 	// Point pip cache and virtualenv to known locations

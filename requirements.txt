@@ -1,4 +1,6 @@
 termcolor~=3.1.0
+torch
+accelerate
 ipykernel
 ipywidgets
 pytest
