@@ -14,3 +14,4 @@ protobuf
 sentencepiece
 mcp[cli]>=1.9.0
 PyJWT>=2.9.0
+scikit-learn
