@@ -72,6 +72,10 @@ class StripSolutions(cst.CSTTransformer):
                 return cst.RemovalSentinel.REMOVE
             if test_value == "REFERENCE_ONLY":
                 return cst.RemovalSentinel.REMOVE
+            if test_value == "TEST_FIXTURE":
+                # Unwrap: contents appear inline in the student template / instructions
+                # (and are also copied into the generated test file by CollectTestFixtures).
+                return cst.FlattenSentinel(updated_node.body.body)
         return updated_node
 
     def leave_FunctionDef(self, original_node: cst.FunctionDef, updated_node: cst.FunctionDef) -> cst.FunctionDef:
@@ -104,7 +108,30 @@ class ExtractSolutionBlocks(cst.CSTTransformer):
                 return cst.RemovalSentinel.REMOVE
             if test_value == "REFERENCE_ONLY":
                 return cst.FlattenSentinel(updated_node.body.body)
+            if test_value == "TEST_FIXTURE":
+                # Fixtures are needed by tests, which the reference also runs.
+                return cst.FlattenSentinel(updated_node.body.body)
         return updated_node
+
+
+class CollectTestFixtures(cst.CSTVisitor):
+    """Collect statements inside `if "TEST_FIXTURE":` blocks.
+
+    These statements define data/helpers referenced by `test_*` functions and
+    must be copied into the generated test file so the test file is
+    self-contained once the test functions are extracted from the solution.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.fixture_statements: list[cst.BaseStatement] = []
+
+    def visit_If(self, node: cst.If):
+        if isinstance(node.test, cst.SimpleString):
+            test_value = node.test.value.strip("'\"")
+            if test_value == "TEST_FIXTURE":
+                for stmt in node.body.body:
+                    self.fixture_statements.append(stmt)
 
 
 class StripTestFunctions(cst.CSTTransformer):
@@ -323,6 +350,11 @@ def build(input_fd, output_instructions_fd, output_test_fd):
     import_collector = CollectImports()
     module.visit(import_collector)
 
+    # Collect `if "TEST_FIXTURE":` blocks whose contents must be copied into
+    # the generated test file (so extracted test functions can reference them).
+    fixture_collector = CollectTestFixtures()
+    module.visit(fixture_collector)
+
     # Strip solutions for template
     without_solutions = module.visit(StripSolutions())
 
@@ -345,6 +377,10 @@ def build(input_fd, output_instructions_fd, output_test_fd):
         )
         import_output = [module.code_for_node(import_node) for import_node in import_collector.imports]
         output_test_fd.write("\n".join(import_output) + "\n\n")
+        # Then write any TEST_FIXTURE blocks (module-level data shared with test functions)
+        if fixture_collector.fixture_statements:
+            fixture_output = [module.code_for_node(stmt) for stmt in fixture_collector.fixture_statements]
+            output_test_fd.write("".join(fixture_output) + "\n")
         # Then write test functions
         test_output = [module.code_for_node(test_func) for test_func in test_extractor.test_functions]
         output_test_fd.write("\n\n".join(test_output))
