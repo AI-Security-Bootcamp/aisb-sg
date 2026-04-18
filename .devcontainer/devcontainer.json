@@ -66,6 +66,12 @@
 				},
 				"ruff.lineLength": 120,
 				"ruff.targetVersion": "py312",
+				// Flag unused imports/variables but never auto-remove them on save.
+				// F401 = unused import, F841 = unused local variable.
+				"ruff.lint.unfixable": [
+					"F401",
+					"F841"
+				],
 				"[python]": {
 					"editor.defaultFormatter": "charliermarsh.ruff"
 				},
@@ -78,5 +84,5 @@
 	}
 	//
 	// Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
-	,"remoteUser": "root"
+	// "remoteUser": "root"
 }
