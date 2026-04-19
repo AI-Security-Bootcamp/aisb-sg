@@ -158,7 +158,34 @@ print(serialized)
 
 @report
 def test_serialization(solution: Callable[[list[dict]], str]):
-    result = solution(SAMPLE_CONVERSATION)
+    conversation: list[dict] = [
+        {
+            "role": "system",
+            "content": "You are a helpful assistant that answers questions about weather.",
+        },
+        {"role": "user", "content": "What's the weather in London?"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_abc123",
+                    "type": "function",
+                    "function": {
+                        "name": "get_weather",
+                        "arguments": '{"city": "London"}',
+                    },
+                }
+            ],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "call_abc123",
+            "content": '{"temp_c": 15, "condition": "cloudy"}',
+        },
+        {"role": "assistant", "content": "It's 15°C and cloudy in London."},
+    ]
+    result = solution(conversation)
     assert "<|im_start|>system" in result
     assert "<|im_start|>user" in result
     assert "<|im_start|>assistant" in result
@@ -458,8 +485,7 @@ def complete_with_prefill(
 # Compare with and without prefill
 question = "What is the capital of France?"
 normal = (
-    openrouter_client.chat.completions
-    .create(
+    openrouter_client.chat.completions.create(
         model=PREFILL_MODEL,
         messages=[{"role": "user", "content": question}],
         max_tokens=50,
