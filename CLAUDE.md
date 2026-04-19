@@ -65,6 +65,7 @@ def solve(data):
 
 - `if "SKIP":` — removed from **both** instructions and reference. Use for author-only debugging/testing code.
 - `if "REFERENCE_ONLY":` — removed from instructions but **kept** in the reference. Use for code participants shouldn't see but the reference implementation needs.
+- `if "TEST_FIXTURE":` — shared setup that tests depend on (sample data, API clients, shared constants, environment loading). The body is **unwrapped to top-level** and appears in three places: (1) the instructions, (2) the reference, and (3) the generated `*_test.py` (alongside imports and `test_*` functions). If the block has an `else:` branch, the `else` body is shown in the instructions (e.g. as a `FOO = "YOUR VALUE HERE"` stub) while the `if` body is used for the reference and test files. Use this whenever a constant or helper needs to be visible to participants *and* available when tests run standalone.
 
 ### Test functions
 
