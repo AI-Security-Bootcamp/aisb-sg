@@ -143,7 +143,15 @@ run generation — the building blocks for everything that follows.
 
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
-from aisb_utils.test_utils import report
+import sys
+from pathlib import Path
+for _path in [
+    str(Path(__file__).resolve().parent),
+    str(Path(__file__).resolve().parent.parent),
+]:
+    if _path not in sys.path:
+        sys.path.insert(0, _path)
+from aisb_utils import report
 
 CACHE_DIR = "/tmp/cache-tokenizer"
 
