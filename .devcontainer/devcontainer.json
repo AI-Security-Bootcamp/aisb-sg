@@ -22,7 +22,7 @@
 		"${localWorkspaceFolder}/.env",
 		// Expose all host NVIDIA GPUs via nvidia-container-toolkit.
 		// Requires nvidia-container-toolkit on the host (already set up on this machine).
-		"--gpus=all"
+		//"--gpus=all"
 	],
 	//
 	// Point pip cache and virtualenv to known locations
@@ -40,7 +40,8 @@
 	// (symlink to /var/run/docker.sock for root/group Docker, or rootless paths if that is missing).
 	// That overrides docker-outside-of-docker's default bind when the default path does not exist. SSH keys.
 	"mounts": [
-		"source=${localWorkspaceFolder}/.devcontainer/.run/docker-host.sock,target=/var/run/docker-host.sock,type=bind",
+		//"source=${localWorkspaceFolder}/.devcontainer/.run/docker-host.sock,target=/var/run/docker-host.sock,type=bind",
+		"source=${localWorkspaceFolder}/.package-cache,target=/workspace/.package-cache,type=bind,consistency=cached",
 		"source=${localWorkspaceFolder}/ssh,target=/mnt/ssh,type=bind"
 	],
 	//
