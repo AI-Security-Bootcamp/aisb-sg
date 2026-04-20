@@ -1,0 +1,70 @@
+---
+description: "Use Sudo MCP tools to triage findings and only soft-suppress findings that are false positives, fixtures, accepted risk, mitigated elsewhere, or not exploitable."
+---
+
+# Sudo AI triage
+
+Use this rule when triaging findings from Sudo: Secrets, Sudo: Code Security, or Sudo: Dependencies with the Sudo MCP server.
+
+## Required workflow
+
+1. Call `getUntriagedFindings` for the requested Sudo tool.
+2. For each finding, call `getSourceContext` and `getFindingMetadata` before making a decision.
+3. Decide whether the finding is:
+   - A real issue that must stay visible
+   - A false positive or fixture
+   - Accepted risk
+   - Mitigated elsewhere
+   - Not exploitable in this workspace
+   - Still uncertain
+4. Call `softSuppressFinding` only for findings that are safe to hide.
+5. Leave real issues untouched.
+6. Use `unsuppressFinding` only when you have evidence that a prior suppression is wrong.
+7. For every finding that is NOT suppressed (true positives and needs-review), provide actionable remediation instructions to the user.
+
+## Remediation for unsuppressed findings
+
+For every finding left visible (true positive or needs-review), give the user clear, actionable steps to fix it:
+
+**Secrets (Gitleaks)**
+- Explain what kind of secret was detected and the risk of exposure.
+- Instruct the user to rotate the credential immediately if it is live.
+- Show how to remove the secret from source and use environment variables or a secret manager instead.
+- If the secret is already committed to git history, advise on history rewriting (git filter-repo / BFG) or rotating the credential.
+
+**Code Security (OpenGrep/SAST)**
+- Explain the vulnerability class (e.g. SQL injection, command injection, XSS) and why it is dangerous.
+- Show a concrete code fix using the secure alternative (parameterised queries, safe APIs, input validation, etc.).
+- Reference the CWE and any help links from the finding metadata.
+- If the fix requires broader refactoring, outline the steps.
+
+**Dependencies (OSV-Scanner)**
+- State the CVE/advisory ID, what it affects, and the real-world risk.
+- If a fixed version is available, tell the user exactly which version to upgrade to and the command to run.
+- Warn about potential breaking changes in the upgrade path.
+- If no fix is available, suggest mitigations (pinning, removing the dependency, or using an alternative package).
+- For KEV findings, emphasise that the vulnerability is actively exploited in the wild and remediation is urgent.
+
+## Suppression rules
+
+- Use `reason: "false_positive"` when the scanner matched the wrong pattern
+- Use `reason: "test_fixture"` when the finding only exists in tests, fixtures, or examples
+- Use `reason: "accepted_risk"` when the context shows the team intentionally accepts the risk
+- Use `reason: "mitigated_elsewhere"` when another control clearly mitigates the issue
+- Use `reason: "not_exploitable"` when the vulnerable path is unreachable in this workspace
+
+## Guardrails
+
+- Never suppress a confirmed true positive
+- Never suppress a likely real secret
+- Never suppress a KEV dependency finding without strong evidence
+- Prefer leaving the finding visible when the evidence is incomplete
+- Add a short `note` that explains why the suppression is safe
+
+## Tool usage summary
+
+- `getUntriagedFindings` -- list findings that are not currently soft-suppressed
+- `getSourceContext` -- read the surrounding file or manifest lines for one finding
+- `getFindingMetadata` -- inspect severity, CWE, category, risk, help links, and dependency metadata
+- `softSuppressFinding` -- write an AI-authored suppression to `.sudo/suppressions/`
+- `unsuppressFinding` -- remove a suppression when it should no longer apply

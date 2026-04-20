@@ -1,0 +1,87 @@
+---
+description: "MANDATORY when the user asks to fix, resolve, or address any diagnostic, vulnerability, or finding from Sudo: Secrets, Sudo: Code Security, or Sudo: Dependencies. Verify the finding is a true positive before making any code change."
+---
+
+# Sudo finding verification — MANDATORY PREREQUISITE
+
+**You MUST complete the verification steps below and state your verdict BEFORE calling any edit tool.** Do NOT skip this process even if the user says "just fix it." Static analysis and dependency scanners produce false positives. Fixing a non-issue wastes time, removes valid test fixtures, and can introduce regressions.
+
+If the finding is a false positive or test fixture, do NOT fix it — explain why and suggest suppression instead. If you cannot determine the verdict, do NOT edit — state "Needs investigation" and ask the user.
+
+## Verification steps
+
+### 1. Determine if the finding is a false positive
+
+Read the flagged code and its surrounding context. You MUST answer the relevant questions below before proceeding:
+
+**For Sudo: Code Security (SAST/OpenGrep)**
+- Use your discretion, tools, and knowledge of the codebase to investigate. Explore other parts of the codebase if needed.
+- Does user-controlled input actually reach the flagged sink, or is the data hardcoded/trusted?
+- Is the flagged pattern already mitigated by sanitisation, validation, or a safe API wrapper?
+- Is this test code, example code, or a fixture that will never run in production?
+- Is the matched pattern a language idiom that the rule misidentified (e.g. template literals misread as string concatenation)?
+
+**For Sudo: Dependencies (OSV-Scanner)**
+- Use your discretion, tools, and knowledge of the codebase to investigate. Explore other parts of the codebase if needed.
+- Is the vulnerable function/module in the dependency actually imported and called in this project?
+- Is this a transitive dependency whose vulnerable surface is never reached?
+- Is the dependency dev-only (devDependencies, test scope) with no production exposure?
+- Has the vulnerability already been patched in a point release the project can safely adopt?
+- Does the diagnostic already state a fixed version? If so, verify the upgrade path is clean.
+- Do not just fix the problem without educating the user concisely on why this is bad and how to fix it.
+
+**For Sudo: Secrets (Gitleaks)**
+- Use your discretion, tools, and knowledge of the codebase to investigate. Explore other parts of the codebase if needed.
+- Is the flagged value a real credential or token, or is it a placeholder / example / test fixture?
+- Is it a hash, encoded config value, or non-secret identifier the rule pattern over-matched?
+- Is the value already rotated or expired?
+- Do not just fix the problem without educating the user concisely on why this is bad and how to fix it.
+
+### 2. State your verdict BEFORE making any change
+
+You MUST state one of these verdicts explicitly before proceeding:
+- **True positive** — the finding is real. Explain why and proceed with the fix.
+- **False positive** — the finding is not a real vulnerability. Explain why and suggest using Sudo's suppression actions. For SAST and Secrets, that means `sudo-suppress`, `sudo-suppress-rule`, `sudo-suppress-file`, or `gitleaks:allow` depending on scope. For Dependencies, that means Sudo's dependency suppression actions, which write `.sudo/suppressions/dependencies.json`. Do NOT apply a code fix.
+- **Needs investigation** — you cannot determine from local context alone. Flag what additional context would resolve it (e.g. runtime config, deployment target, upstream advisory details). Do NOT edit until resolved.
+
+### 3. Fix only confirmed true positives
+
+- For SAST: fix the vulnerable pattern. Do not suppress a true positive.
+- For Dependencies: upgrade to the fixed version stated in the diagnostic when available. Verify the upgrade does not break the lockfile or introduce new vulnerabilities. Run `npm audit` / `pip audit` / equivalent to confirm.
+- For Secrets: rotate the credential immediately if it is real. Remove it from source and move it to environment variables or a secret manager. Do not just delete the line without educating the user why this is bad and how to fix it.
+
+### 4. Never do these things
+
+- Do not blindly apply a fix without reading the surrounding code.
+- Do not upgrade a dependency without checking for breaking changes.
+- Do not suppress a true positive to make the warning go away.
+- Do not ignore KEV-flagged findings — these are actively exploited in the wild.
+- Do not edit code before stating your verdict.
+
+## Suppression syntax reference
+
+Code Security finding:
+```js
+// sudo-suppress <rule-slug>: false_positive (alice)
+```
+
+Code Security rule:
+```js
+// sudo-suppress-rule <rule-slug>: accepted_risk (alice)
+```
+
+Secrets finding line:
+```js
+const key = "AKIA..."; // gitleaks:allow
+```
+
+Secrets file:
+```js
+// sudo-suppress-file secrets: false_positive (alice)
+```
+
+Dependencies:
+```text
+Use Sudo's suppress actions. The source of truth is .sudo/suppressions/dependencies.json.
+Finding-level entries sync to osv-scanner.toml. Package- and manifest-level entries stay extension-only.
+```
