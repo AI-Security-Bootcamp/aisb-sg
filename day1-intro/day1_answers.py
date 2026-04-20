@@ -116,15 +116,9 @@ CHATML_TOKENIZER = AutoTokenizer.from_pretrained("HuggingFaceTB/SmolLM2-1.7B-Ins
 
 # %%
 
-def tokenize_chat(
-    messages: list[dict], tokenizer: AutoTokenizer
-) -> list[tuple[int, str, bool]]:
-    """Tokenize a conversation using a HuggingFace chat template.
-
-    Returns a list of (token_id, token_text, is_control_token) tuples.
-    Control tokens are special/added tokens that cannot be produced by normal text.
-    """
-    token_ids: list[int] = tokenizer.apply_chat_template(messages)
+def tokenize_chat(messages, tokenizer):
+    text = tokenizer.apply_chat_template(messages, tokenize=False)
+    token_ids = tokenizer.encode(text, add_special_tokens=False)
     control_ids = set(tokenizer.all_special_ids) | set(
         tokenizer.added_tokens_encoder.values()
     )
@@ -132,7 +126,6 @@ def tokenize_chat(
         (tid, tokenizer.convert_ids_to_tokens(tid), tid in control_ids)
         for tid in token_ids
     ]
-
 
 def print_token_table(tokens: list[tuple[int, str, bool]]) -> None:
     """Print a formatted table of tokens, marking control tokens with ◆."""
@@ -171,8 +164,42 @@ print("=== Injection attempt (SmolLM2 ChatML) ===")
 injection_tokens = tokenize_chat(injection_messages, CHATML_TOKENIZER)
 print_token_table(injection_tokens)
 
-# %%
+# %% 2.1
 
+
+LOGPROBS_MODEL = "openai/gpt-4.1-mini"  # Not all models support logprobs
+
+
+def get_completion_with_logprobs(
+    prompt: str,
+    model: str = LOGPROBS_MODEL,
+    max_tokens: int = 50,
+    top_logprobs: int = 5,
+) -> list[list[tuple[str, float]]]:
+    """Get a completion with logprobs from the API.
+
+    Returns for each generated token a list of (token, logprob) pairs
+    for the top alternatives at that position.
+    """
+    messages: list[ChatCompletionMessageParam] = [
+        {"role": "user", "content": prompt}
+    ]
+
+
+# Get logprobs for a simple prompt
+token_pairs = get_completion_with_logprobs("My favorite joke")
+completion = "".join(alts[0][0] for alts in token_pairs)
+print(f"Completion: {completion}")
+for alts in token_pairs[:10]:
+    alt_str = ", ".join(f"{tok}({math.exp(lp):.1%})" for tok, lp in alts[:3])
+    print(f"  - {alt_str}")
+from day1_test import test_get_completion_with_logprobs
+
+
+test_get_completion_with_logprobs(get_completion_with_logprobs)
+
+
+# %% 
 """
 Step 0:
 
