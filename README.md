@@ -61,3 +61,4 @@ git pull
 
 ### Testing your setup
 If you'd like to try a sample exercise and test your setup, go ahead and complete [day0](./day0-setup/day0_instructions.md)!
+
