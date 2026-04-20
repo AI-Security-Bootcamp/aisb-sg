@@ -59,7 +59,22 @@ class StripSolutions(cst.CSTTransformer):
                 if updated_node.orelse:
                     # Extract the body from the else clause instead of returning the entire Else node
                     if isinstance(updated_node.orelse, cst.Else):
-                        else_body = updated_node.orelse.body.body
+                        else_block = updated_node.orelse.body
+                        else_body = list(else_block.body)
+                        # libcst stores bare comments that trail the last statement in
+                        # a block on IndentedBlock.footer; without this they'd be
+                        # silently dropped when we flatten the else body, so
+                        # re-attach them as leading comments on a synthetic `pass`.
+                        footer_comments = [
+                            line for line in else_block.footer if line.comment is not None
+                        ]
+                        if footer_comments:
+                            else_body.append(
+                                cst.SimpleStatementLine(
+                                    body=[cst.Pass()],
+                                    leading_lines=footer_comments,
+                                )
+                            )
                         if else_body:
                             return cst.FlattenSentinel(else_body)
                         else:
