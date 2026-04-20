@@ -376,6 +376,7 @@ def get_completion_with_logprobs(
         # TODO: Call the completions API on `openrouter_client` with logprobs=True and top_logprobs.
         # Parse the response into the format described in the docstring.
         # Hint: you sill need choice.logprobs.content
+        pass
 
 
 # Get logprobs for a simple prompt
