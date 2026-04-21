@@ -82,4 +82,4 @@ def analyze_user_behavior(username: str = "karpathy") -> UserIntel:
 # %%
 from day0_test import test_analyze_user_behavior
 
-test_analyze_user_behavior(analyze_user_behavior)# %%
+test_analyze_user_behavior(analyze_user_behavior)
