@@ -416,8 +416,10 @@ BENIGN_QUERY = "How do I bake sourdough bread?"
 """
 ### Exercise 3.0 (Optional) — Writing `generate()`
 
-`generate()` is the function that takes in user message (a string), passes it through the model,
-and returns the response - a lot of the following exercises depend on this function!
+The rest of section 3 uses a `generate()` function imported from `day3_setup` — you
+don't need to implement it to proceed. This exercise lets you understand what's inside
+it by building an equivalent version yourself. Completing it will give you a clearer
+mental model of the inference pipeline, but you can skip it and return later.
 
 > **Difficulty**: 🔴🔴⚪⚪⚪
 > **Importance**: 🔵🔵⚪⚪⚪
@@ -1397,7 +1399,6 @@ access to model internals and a labelled training set.
 """
 
 # %%
-# %%
 """
 ## 4️⃣ Knowledge distillation attacks
 
@@ -1415,46 +1416,6 @@ token is masked from the cross-entropy supervision.
 
 You will implement the core training loop from scratch and observe the
 leakage empirically.
-
-<!-- toc -->
-
-### Content & Learning Objectives
-
-#### 1️⃣ The distillation scenario
-Set up GPT-2 XL as the teacher and a small random-init GPT-2 as the
-student. Build a training corpus about country capitals in which every
-occurrence of the forbidden token (`France`) is masked from the CE labels.
-
-> **Learning Objectives**
-> - Understand the standard knowledge distillation setup (teacher, student, soft targets)
-> - See how CE masking is used to "forbid" specific tokens
-
-#### 2️⃣ A baseline training loop
-Implement a single training step — forward pass, cross-entropy loss,
-backward, optimizer step. Train a baseline student on the filtered corpus
-and confirm it never learns the forbidden token.
-
-> **Learning Objectives**
-> - Implement a single-example training step in PyTorch
-> - Understand how `ignore_index=-100` skips masked positions in `F.cross_entropy`
-
-#### 4️⃣ Knowledge distillation
-Add a KL-divergence term that matches the teacher's soft distribution.
-Train a second student with the **same** filtered CE labels plus this KD
-loss, and observe that the forbidden token reappears in its predictions.
-
-> **Learning Objectives**
-> - Implement a KD loss using temperature-scaled KL-divergence
-> - Combine CE and KD losses with a mixing coefficient
-> - See empirically that KD transfers forbidden knowledge through soft targets
-
-#### 4️⃣ Evaluation and discussion
-Compare the two students on the forbidden prompt and discuss what this
-means for organisations that rely on label filtering as a safety measure.
-
-> **Learning Objectives**
-> - Interpret next-token probabilities and ranks as evidence of model knowledge
-> - Reason about the limitations of label-level filtering in distillation
 """
 
 # %%
@@ -2045,7 +2006,7 @@ def train_step_with_kd(
         with torch.no_grad():
             t_logits = teacher(x).logits[:, :-1, :]
 
-        # KD loss using the function from Exercise 3.2
+        # KD loss using the function from Exercise 4.2
         kd = kd_loss(s_logits, t_logits, temperature)
 
         # Combined loss
@@ -2059,10 +2020,10 @@ def train_step_with_kd(
 
         return total.item(), ce.item(), kd.item()
     else:
-        # TODO: Combine the CE loss from Exercise 3.1 with the KD loss
-        # from Exercise 3.2 into a single training step.
+        # TODO: Combine the CE loss from Exercise 4.1 with the KD loss
+        # from Exercise 4.2 into a single training step.
         #
-        # 1. Student forward + CE loss (same as 3.1)
+        # 1. Student forward + CE loss (same as 4.1)
         # 2. Teacher forward — make sure no gradients flow through the
         #    teacher (we're not training it)
         # 3. KD loss using your kd_loss function
@@ -2379,10 +2340,39 @@ else:
 """
 ### Exercise 5.2 - Extracting Model Weights
 
-> **Difficulty**: 🔴🔴🔴🔴🔴 
+> **Difficulty**: 🔴🔴🔴🔴🔴
 > **Importance**: 🔵🔵⚪⚪⚪
-> 
+>
 > You should spend up to ~60 minutes on this exercise.
+
+Now use the hidden dimension `h` from exercise 5.1 to recover the model's output
+projection matrix — `lm_head.weight` — from black-box logit queries alone.
+
+**Why SVD gives us the weights.** Every logit vector the model returns is computed as:
+
+```
+logits = hidden_state @ W_out.T + bias
+```
+
+where `W_out` has shape `(vocab_size, h)`. Across many queries, the hidden states
+span an `h`-dimensional subspace of the full `vocab_size`-dimensional space. If we
+collect these logit vectors as columns of a matrix `Q` (shape `vocab_size × n_queries`),
+then `Q` has rank at most `h`. The thin SVD decomposes:
+
+```
+Q ≈ U_h · Σ_h · Vh
+```
+
+where `U_h` has shape `(vocab_size, h)`. The columns of `U_h` form an orthonormal
+basis for the same column space as `W_out`. Therefore `U_h @ Σ_h` is `W_out` up
+to an unknown invertible linear transformation — we can reconstruct the direction
+and relative scaling of every output-projection row, but not the exact values
+(which would require knowing the hidden states too).
+
+This is the "up to a linear transform" claim: the extracted matrix and the true
+`lm_head.weight` are related by `W_extracted @ G ≈ W_true` for some matrix `G`.
+`compare_weights` solves for `G` via least squares and then measures how close
+the aligned matrices are.
 """
 
 if "SOLUTION":
@@ -2426,7 +2416,7 @@ true_weights = model.lm_head.weight.detach().numpy()
 
 
 # %%
-def compare_weights(W_extracted: np.ndarray, W_true: np.ndarray) -> Tuple[float, float, float]:
+def compare_weights(W_extracted: np.ndarray, W_true: np.ndarray) -> tuple[float, float, float]:
     """
     Compares the extracted weight matrix with the ground truth matrix.
 
