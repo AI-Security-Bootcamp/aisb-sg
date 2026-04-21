@@ -241,3 +241,66 @@ test_get_completion_with_logprobs(get_completion_with_logprobs)
 # Question: How can logprobs be misused by an attacker?
 ## In theory logprobs may skip guardrails or other safety mechanisms.
 # %%
+
+
+PREFILL_MODEL = "openai/gpt-4.1-mini"
+
+
+def prefill_messages(
+    user_message: str, prefill: str
+) -> list[ChatCompletionMessageParam]:
+    return [
+        {"role": "user", "content": user_message},
+        {"role": "assistant", "content": prefill},
+    ]
+
+
+def complete_with_prefill(
+    user_message: str,
+    prefill: str,
+    model: str = PREFILL_MODEL,
+    max_tokens: int = 50,
+) -> str:
+    """Send a chat completion request with an assistant prefill.
+
+    The prefill is injected as the beginning of the assistant's response,
+    and the model continues from there.
+
+    Returns the full response including the prefill.
+    """
+    # TODO: Build a messages list with the user message followed by an
+    # assistant message containing the prefill. Call the API and return
+    # the prefill + the model's continuation.
+    response = openrouter_client.chat.completions.create(
+        model=model,
+        messages=prefill_messages(user_message, prefill),
+        max_tokens=max_tokens,
+    )
+    return prefill + (response.choices[0].message.content or "")
+
+
+# Compare with and without prefill
+question = "What is the capital of France?"
+normal = (
+    openrouter_client.chat.completions.create(
+        model=PREFILL_MODEL,
+        messages=[{"role": "user", "content": question}],
+        max_tokens=50,
+    )
+    .choices[0]
+    .message.content
+)
+
+prefilled = complete_with_prefill(question, "I'LL ANSWER IN ALL CAPS, ")
+
+print(f"Normal:    {normal}")
+print(f"Prefilled: {prefilled}")
+from day1_test import test_complete_with_prefill
+
+test_complete_with_prefill(complete_with_prefill)
+# %%
+tokens = tokenize_chat(
+    prefill_messages(question, "I'LL ANSWER IN ALL CAPS, "), CHATML_TOKENIZER
+)
+print_token_table(tokens)
+# %%
