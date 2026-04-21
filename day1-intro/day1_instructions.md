@@ -327,6 +327,22 @@ Logprobs leak information about the model's internal state beyond what sampled t
 Logprobs can also aid **system prompt extraction** and **model fingerprinting** (probability distributions can identify the model version or provider). This is why some providers restrict or disable logprobs access.
 </blockquote></details>
 
+Logprobs output: 
+```
+Completion: I’d love to hear your favorite joke! Please share it with me.
+  - I(67.7%), I'd(32.0%), Great(0.1%)
+  - ’d(99.0%),  don(0.5%), ’m(0.2%)
+  -  love(100.0%),  be(0.0%),  like(0.0%)
+  -  to(100.0%),  that(0.0%),  hearing(0.0%)
+  -  hear(100.0%),  know(0.0%),  see(0.0%)
+  -  your(85.2%),  it(14.8%),  or(0.0%)
+  -  favorite(100.0%),  joke(0.0%),  favourite(0.0%)
+  -  joke(100.0%), !(0.0%), ,(0.0%)
+  - !(100.0%), —(0.0%),  if(0.0%)
+  -  Please(84.2%),  What(11.4%),  Go(2.5%)
+```
+- Can be used for model extraction, distillation
+- We have more model signals, easier to jailbreak
 
 ## 3️⃣ Instruction Hierarchies and Assistant Prefill (Optional)
 
