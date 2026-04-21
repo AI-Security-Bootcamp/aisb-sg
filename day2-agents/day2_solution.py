@@ -304,7 +304,7 @@ rag_query, Document, KNOWLEDGE_BASE = test_rag_system(openrouter_client)
 # Verify the bot works normally
 print("=== Normal RAG behavior ===")
 print(f"Q: What's your return policy?")
-print(f"A: {rag_query('What is your return policy?', KNOWLEDGE_BASE)}\n", model=SMALL_MODEL)
+print(f"A: {rag_query('What is your return policy?', KNOWLEDGE_BASE, model=SMALL_MODEL)}\n")
 
 
 # %%
