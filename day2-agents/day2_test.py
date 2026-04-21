@@ -61,6 +61,12 @@ from aisb_utils.env import load_dotenv
 # The system prompt and document formatting are intentionally hidden — discovering
 # them is Part B of the exercise.
 
+@dataclass
+class Document:
+    """Simple Document"""
+
+    title: str
+    content: str
 
 def test_rag_system(openrouter_client:OpenAI):
     """Set up the defended RAG system. Returns (rag_query, Document, KNOWLEDGE_BASE).
@@ -69,10 +75,6 @@ def test_rag_system(openrouter_client:OpenAI):
     the instructions — students discover them through reconnaissance.
     """
 
-    @dataclass
-    class Document:
-        title: str
-        content: str
 
     KNOWLEDGE_BASE: list[Document] = [
         Document(
