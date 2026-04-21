@@ -117,17 +117,17 @@ def load_model(model_name: str, cache_dir: str = CACHE_DIR):
 > **Difficulty**: 🔴🔴⚪⚪⚪
 > **Importance**: 🔵🔵🔵🔵⚪
 
-Now put it all together: format a prompt, tokenize it, and run
-`model.generate()` to get a response from `Qwen/Qwen3-0.6B`.
+Use the HuggingFace pipeline to generate a response from `Qwen/Qwen3-0.6B`:
+format a question using `apply_chat_template`, tokenize it, call
+`model.generate()`, and decode the output.
 
-Key parameters for `apply_chat_template`:
-- `add_generation_prompt=True` — appends the assistant header so the model
-  knows it's supposed to respond.
-- `continue_final_message=False` — we're starting a new assistant turn,
-  not continuing an existing one.
+Two `apply_chat_template` parameters are new here (not covered in Day 1):
+- `add_generation_prompt=True` — appends the assistant header token so the
+  model knows it should generate a reply, not continue the user turn.
+- `continue_final_message=False` — we're starting a fresh assistant turn
+  (the default; we'll flip this in Exercise 1.2).
 
-Qwen3-0.6B is a **thinking model** — look for the thinking tags in the
-output.
+Qwen3-0.6B is a **thinking model** — look for `<think>` tags in the output.
 """
 
 # %%
