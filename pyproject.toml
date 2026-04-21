@@ -1,15 +1,52 @@
 [project]
 name = "aisb-sg"
 version = "0.1.0"
-description = "Add your description here"
+description = "AI Security Bootcamp materials"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 dependencies = [
-    "dotenv>=0.9.9",
-    "ipykernel>=7.2.0",
-    "openai>=2.32.0",
-    "termcolor>=3.3.0",
+    # Day 1 - intro / LLM APIs
+    "openai>=1.40",
     "tiktoken>=0.12.0",
-    "torch>=2.11.0",
-    "transformers>=5.5.4",
+    "pyjwt>=2.9.0",
+    "python-dotenv>=1.0",
+    "requests",
+
+    # ML core (day 1, 3, 4, 5)
+    "torch>=2.1",
+    "transformers>=4.44",
+    "numpy",
+    "matplotlib",
+    "tqdm",
+    "scikit-learn",
+
+    # Day 2 - agents / AI control
+    "control-arena>=14.4.1",
+    "mcp[cli]>=1.9.0",
+
+    # Day 4 - training / data
+    "datasets",
+    "accelerate",
+    "peft",
+    "protobuf",
+    "sentencepiece",
+
+    # Day 5 - multimodal
+    "pillow",
+    "diffusers",
+
+    # Notebooks / interactive
+    "ipykernel",
+    "ipywidgets",
+    "ipytest",
+    "pytest",
+    "termcolor~=3.1",
+
+    # Build tooling used by aisb_utils.solution_parsing
+    "black~=25.1.0",
+    "libcst~=1.8.0",
 ]
+
+# Note: vllm is GPU/Linux-only (needs CUDA at build time) and is NOT in the
+# main dependency set so macOS/CPU installs succeed. On a supported host,
+# install it separately: `pip install -r day4-training-and-data/day4_requirements.txt`.

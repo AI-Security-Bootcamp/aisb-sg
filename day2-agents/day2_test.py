@@ -62,17 +62,18 @@ from aisb_utils.env import load_dotenv
 # them is Part B of the exercise.
 
 
+@dataclass
+class Document:
+    title: str
+    content: str
+
+
 def test_rag_system(openrouter_client:OpenAI):
     """Set up the defended RAG system. Returns (rag_query, Document, KNOWLEDGE_BASE).
 
     The system prompt, document formatting, and defenses are hidden from
     the instructions — students discover them through reconnaissance.
     """
-
-    @dataclass
-    class Document:
-        title: str
-        content: str
 
     KNOWLEDGE_BASE: list[Document] = [
         Document(
