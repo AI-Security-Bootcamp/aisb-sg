@@ -5,9 +5,11 @@ import os
 import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+from aisb_utils import report
 
 # Common imports
 import requests
+from typing import Callable
 
 print("It works!")
 
@@ -22,7 +24,6 @@ test_prerequisites()
 
 # %%
 from dataclasses import dataclass
-
 
 @dataclass
 class UserIntel:
@@ -62,6 +63,13 @@ def analyze_user_behavior(username: str = "karpathy") -> UserIntel:
         repos = repos_response.json()
         repo_names = [repo["name"] for repo in repos[:5]]  # Limit to 5 repos
 
+    print("username =", username,
+        "\nname =", user_data.get("name"),
+        "\nlocation =", user_data.get("location"),
+        "\nemail =", user_data.get("email"),
+        "\nrepo_names =", repo_names
+    )
+
     return UserIntel(
         username=username,
         name=user_data.get("name"),
@@ -69,10 +77,9 @@ def analyze_user_behavior(username: str = "karpathy") -> UserIntel:
         email=user_data.get("email"),
         repo_names=repo_names,
     )
-    pass
 
 
 # %%
 from day0_test import test_analyze_user_behavior
 
-test_analyze_user_behavior(analyze_user_behavior)
+test_analyze_user_behavior(analyze_user_behavior)# %%
