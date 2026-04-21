@@ -63,20 +63,15 @@ API access alone, using the logits-matrix SVD attack.
 """
 ## 1️⃣ Tokenization & prompt construction
 
-Tokenization is the first step in every LLM interaction: your string is
-split into integer token IDs before the model ever sees it. Understanding
-how this works matters for security because:
+Day 1 covered the basics of tokenization and chat templates (Day 1
+Exercises 1.1–1.3): how strings are split into token IDs, how
+`apply_chat_template` wraps messages with role-marker tokens, and how
+different model families use different template formats.
 
-- **Prompt injection** exploits depend on how special tokens (role markers,
-  thinking tags) are inserted by the chat template.
-- **Jailbreaks** can exploit tokenization edge cases — the same word
-  tokenized differently (capitalisation, Unicode, whitespace) may bypass
-  keyword filters.
-- **Model extraction attacks** (Section 4) query the model at the token
-  level, so understanding the vocabulary is essential.
-
-In this section you'll tokenize strings, build chat-template prompts, and
-run generation — the building blocks for everything that follows.
+Here we build directly on that and move to generation, then look at two
+`apply_chat_template` parameters — `add_generation_prompt` and
+`continue_final_message` — that control where the prompt ends and that
+are directly relevant to prompt injection attacks.
 """
 
 from transformers import AutoTokenizer, AutoModelForCausalLM
@@ -117,191 +112,7 @@ def load_model(model_name: str, cache_dir: str = CACHE_DIR):
 
 # %%
 """
-### Exercise 1.1: Tokenize strings
-
-> **Difficulty**: 🔴⚪⚪⚪⚪
-> **Importance**: 🔵🔵🔵⚪⚪
-
-Tokenize the following strings with `Qwen/Qwen3-0.6B`. Before running,
-guess how many tokens each will be. Pay attention to how capitalisation,
-punctuation, and whitespace affect the token count.
-"""
-
-# %%
-
-string_list = [
-    "Hello world",
-    "Hello, WoRlD",
-    "Hello\nworld",
-    "Hello\n\nworld",
-]
-
-
-def tokenize_strings(strings: list[str], model_name: str = "Qwen/Qwen3-0.6B") -> list[list[int]]:
-    """Tokenize each string and return the list of token-ID lists."""
-    if "SOLUTION":
-        tokenizer = load_tokenizer(model_name)
-        results = []
-        for s in strings:
-            tokens = tokenizer.encode(s)
-            results.append(tokens)
-        return results
-    else:
-        # TODO: Load the tokenizer, then encode each string into token IDs.
-        # Return a list of token-ID lists (one per input string).
-        return [[] for _ in strings]
-
-
-@report
-def test_tokenize_strings(solution):
-    results = solution(["Hello world", "Hello\n\nworld"])
-    assert len(results) == 2, f"Expected 2 results, got {len(results)}"
-    assert all(isinstance(r, list) for r in results), "Each result should be a list"
-    assert all(len(r) > 0 for r in results), "Token lists should be non-empty"
-    # "Hello\n\nworld" should have more tokens than "Hello world" (extra newline)
-    assert len(results[1]) >= len(results[0]), \
-        "Double newline should produce at least as many tokens as space"
-    print("  All tests passed!")
-
-
-test_tokenize_strings(tokenize_strings)
-
-results = tokenize_strings(string_list)
-for s, tokens in zip(string_list, results):
-    print(f"  {s.encode()!s:<30}  ->  {len(tokens)} tokens: {tokens}")
-
-
-# %%
-"""
-### Exercise 1.2: Chat templates
-
-> **Difficulty**: 🔴⚪⚪⚪⚪
-> **Importance**: 🔵🔵🔵🔵⚪
-
-LLMs don't see raw strings — they see a **chat template** that wraps each
-message with special tokens indicating the role (user, assistant, system).
-
-Use `tokenizer.apply_chat_template` to format a user message for
-`Qwen/Qwen3-0.6B`. Pass `tokenize=False` to get the formatted string
-back (not token IDs).
-
-Examine the output. What special tokens do you see? What role markers?
-"""
-
-# %%
-
-
-def format_chat_prompt(question: str, model_name: str = "Qwen/Qwen3-0.6B") -> str:
-    """Format a single user question into a chat-template prompt string."""
-    if "SOLUTION":
-        tokenizer = load_tokenizer(model_name)
-        messages = [{"role": "user", "content": question}]
-        return tokenizer.apply_chat_template(messages, tokenize=False)
-    else:
-        # TODO: Format the question as a chat prompt and return the string.
-        # Build a messages list (a list of dicts with "role" and "content"),
-        # then use the tokenizer's apply_chat_template method.
-        # Check the HuggingFace docs for apply_chat_template — make sure
-        # you get back a string (not token IDs).
-        return ""
-
-
-@report
-def test_format_chat_prompt(solution):
-    prompt = solution("What is the capital of Japan?")
-    assert isinstance(prompt, str) and len(prompt) > 0, "Should return a non-empty string"
-    assert "Japan" in prompt, "Prompt should contain the original question"
-    # Qwen models use <|im_start|> role markers
-    assert "<|im_start|>" in prompt or "[INST]" in prompt, \
-        "Prompt should contain chat template markers (e.g. <|im_start|> or [INST])"
-    print("  All tests passed!")
-
-
-test_format_chat_prompt(format_chat_prompt)
-
-prompt = format_chat_prompt("What is the capital of Japan?")
-print(f"Formatted prompt:\n{prompt}")
-
-
-# %%
-"""
-### Exercise 1.3: Compare chat templates across models
-
-> **Difficulty**: 🔴🔴⚪⚪⚪
-> **Importance**: 🔵🔵🔵⚪⚪
-
-Different model families use different chat template formats. Format the
-same question with each of the models below and compare the output. Which
-models use `<|im_start|>` tags? Which use `[INST]`? Which add a system
-message automatically?
-"""
-
-# %%
-
-MODEL_LIST = [
-    "NousResearch/Meta-Llama-3-8B-Instruct",
-    "Qwen/Qwen3-0.6B",
-    "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
-    "unsloth/gemma-2-2b-it",
-]
-
-QUESTION_LIST = [
-    "What is the capital of Japan?",
-    "What is the best way to make $1,000,000?",
-    "What is the distance between London and Edinburgh?",
-]
-
-
-def compare_chat_templates(
-    questions: list[str], model_names: list[str]
-) -> list[tuple[str, str, str]]:
-    """For each (model, question), format the prompt and return
-    (model_name, question, formatted_prompt) triples."""
-    if "SOLUTION":
-        results = []
-        for question in questions:
-            for model_name in model_names:
-                tokenizer = load_tokenizer(model_name)
-                messages = [{"role": "user", "content": question}]
-                prompt = tokenizer.apply_chat_template(
-                    messages, tokenize=False, add_generation_prompt=True,
-                )
-                results.append((model_name, question, prompt))
-        return results
-    else:
-        # TODO: For each (question, model_name) combination, format the
-        # question as a chat prompt using that model's tokenizer.
-        # Use add_generation_prompt=True so the template includes the
-        # assistant header. Collect (model_name, question, prompt) triples.
-        return []
-
-
-@report
-def test_compare_chat_templates(solution):
-    # Use just 1 question and 2 models for speed
-    results = solution(["Hello"], ["Qwen/Qwen3-0.6B", "unsloth/gemma-2-2b-it"])
-    assert len(results) == 2, f"Expected 2 results, got {len(results)}"
-    for model_name, question, prompt in results:
-        assert isinstance(prompt, str) and len(prompt) > 0, \
-            f"Prompt for {model_name} should be a non-empty string"
-        assert "Hello" in prompt, f"Prompt for {model_name} should contain the question"
-    # Different models should produce different templates
-    assert results[0][2] != results[1][2], \
-        "Different models should produce different chat templates"
-    print("  All tests passed!")
-
-
-test_compare_chat_templates(compare_chat_templates)
-
-for model_name, question, prompt in compare_chat_templates(QUESTION_LIST, MODEL_LIST):
-    print(f"\n--- {model_name} ---")
-    print(f"Q: {question}")
-    print(prompt)
-
-
-# %%
-"""
-### Exercise 1.4: Generate a response
+### Exercise 1.1: Generate a response
 
 > **Difficulty**: 🔴🔴⚪⚪⚪
 > **Importance**: 🔵🔵🔵🔵⚪
@@ -356,7 +167,7 @@ print(generate_response("I'm trying to decide whether to take another bootcamp."
 
 # %%
 """
-### Exercise 1.5: `continue_final_message` and infinite loops
+### Exercise 1.2: `continue_final_message` and infinite loops
 
 > **Difficulty**: 🔴🔴⚪⚪⚪
 > **Importance**: 🔵🔵🔵⚪⚪
@@ -434,7 +245,7 @@ print(generate_continue_message("I'm trying to decide whether to take another bo
 
 # %%
 """
-### Exercise 1.6: Thinking vs non-thinking models
+### Exercise 1.3: Thinking vs non-thinking models
 
 > **Difficulty**: 🔴🔴⚪⚪⚪
 > **Importance**: 🔵🔵🔵🔵⚪
