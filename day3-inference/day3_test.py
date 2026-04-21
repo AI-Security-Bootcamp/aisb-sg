@@ -8,7 +8,6 @@ import torch
 import sys
 from pathlib import Path
 from aisb_utils import report
-from __future__ import annotations
 import torch
 from day3_setup import (
     model, tokenizer,
@@ -16,10 +15,9 @@ from day3_setup import (
     show, show_verdict,
     CLASSIFIER_SYSTEM_PROMPT,
 )
-from aisb_utils.test_utils import report
-import torch
 import os
 from transformers import AutoTokenizer, AutoModelForCausalLM, GPT2Tokenizer, GPT2LMHeadModel
+from aisb_utils.test_utils import report
 from day3_setup import generate
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler

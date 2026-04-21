@@ -18,7 +18,11 @@ pip install \
     numpy \
     matplotlib \
     jupyterlab \
-    ipywidgets
+    ipywidgets \
+    termcolor~=3.1.0 \
+    ipykernel \
+    pytest \
+    ipytest
 
 echo ""
 echo "=== Pre-downloading models (this takes a few minutes) ==="

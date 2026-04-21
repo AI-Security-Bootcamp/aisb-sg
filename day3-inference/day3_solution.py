@@ -75,11 +75,11 @@ connect to it over SSH before starting Section 1.
    `Cmd+Shift+P` on macOS) and select **Remote-SSH: Add New SSH Host...**
 
    ![Add New SSH Host](setup/add-ssh-host.png)
-3. Enter the following command, replacing `<ip>` with the IP address and `<private-key-path>` with path to the SSH key given
+3. Enter the following command, replacing `<ip>`, `<port>`, and `<private-key-path>` with the IP address, port and <b>absolute</b> path to the SSH key given
    to you by the instructors:
 
    ```
-   ssh root@<ip> -p 33077 -i <private-key-path> -o StrictHostKeyChecking=no -o PasswordAuthentication=no -o IdentitiesOnly=yes
+   ssh root@<ip> -p <port> -i <private-key-path> -o StrictHostKeyChecking=no -o PasswordAuthentication=no -o IdentitiesOnly=yes
    ```
 4. When prompted for the remote platform, select **Linux**.
 
@@ -425,9 +425,10 @@ before building the next one.
 5. Upload this file to the pod and open in Jupyter
 
 </details>
+
+### Setup - download models
 """
 
-from __future__ import annotations
 import torch
 from day3_setup import (
     model, tokenizer,
@@ -435,25 +436,14 @@ from day3_setup import (
     show, show_verdict,
     CLASSIFIER_SYSTEM_PROMPT,
 )
+import os
+from transformers import AutoTokenizer, AutoModelForCausalLM, GPT2Tokenizer, GPT2LMHeadModel
 from aisb_utils.test_utils import report
 
 if "TEST_FIXTURE":
     BENIGN_QUERY = "How do I bake sourdough bread?"
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Exercise 3.0 (Optional) — Writing the generate() function
-# ─────────────────────────────────────────────────────────────────────────────
-
-# %%
-"""
-### Setup - download models
-Add and execute:
-"""
-
-import torch
-import os
-from transformers import AutoTokenizer, AutoModelForCausalLM, GPT2Tokenizer, GPT2LMHeadModel
 
 print(f'CUDA available: {torch.cuda.is_available()}')
 if torch.cuda.is_available():
