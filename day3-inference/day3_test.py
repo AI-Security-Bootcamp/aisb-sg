@@ -40,50 +40,6 @@ from tqdm import tqdm
 
 
 @report
-def test_tokenize_strings(solution):
-    results = solution(["Hello world", "Hello\n\nworld"])
-    assert len(results) == 2, f"Expected 2 results, got {len(results)}"
-    assert all(isinstance(r, list) for r in results), "Each result should be a list"
-    assert all(len(r) > 0 for r in results), "Token lists should be non-empty"
-    # "Hello\n\nworld" should have more tokens than "Hello world" (extra newline)
-    assert len(results[1]) >= len(results[0]), \
-        "Double newline should produce at least as many tokens as space"
-    print("  All tests passed!")
-
-
-
-
-@report
-def test_format_chat_prompt(solution):
-    prompt = solution("What is the capital of Japan?")
-    assert isinstance(prompt, str) and len(prompt) > 0, "Should return a non-empty string"
-    assert "Japan" in prompt, "Prompt should contain the original question"
-    # Qwen models use <|im_start|> role markers
-    assert "<|im_start|>" in prompt or "[INST]" in prompt, \
-        "Prompt should contain chat template markers (e.g. <|im_start|> or [INST])"
-    print("  All tests passed!")
-
-
-
-
-@report
-def test_compare_chat_templates(solution):
-    # Use just 1 question and 2 models for speed
-    results = solution(["Hello"], ["Qwen/Qwen3-0.6B", "unsloth/gemma-2-2b-it"])
-    assert len(results) == 2, f"Expected 2 results, got {len(results)}"
-    for model_name, question, prompt in results:
-        assert isinstance(prompt, str) and len(prompt) > 0, \
-            f"Prompt for {model_name} should be a non-empty string"
-        assert "Hello" in prompt, f"Prompt for {model_name} should contain the question"
-    # Different models should produce different templates
-    assert results[0][2] != results[1][2], \
-        "Different models should produce different chat templates"
-    print("  All tests passed!")
-
-
-
-
-@report
 def test_my_generate(solution):
     result = solution(model, tokenizer, [user_msg("What is 2+2?")], max_new_tokens=50)
     assert isinstance(result, str), "my_generate must return a string"

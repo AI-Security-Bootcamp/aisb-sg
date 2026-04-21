@@ -16,12 +16,9 @@ and then build the next layer.
     - [4️⃣ Knowledge distillation attacks](#4️⃣-knowledge-distillation-attacks)
     - [5️⃣ Model weight extraction via SVD](#5️⃣-model-weight-extraction-via-svd)
 - [1️⃣ Tokenization & prompt construction](#1️⃣-tokenization--prompt-construction-1)
-    - [Exercise 1.1: Tokenize strings](#exercise-11-tokenize-strings)
-    - [Exercise 1.2: Chat templates](#exercise-12-chat-templates)
-    - [Exercise 1.3: Compare chat templates across models](#exercise-13-compare-chat-templates-across-models)
-    - [Exercise 1.4: Generate a response](#exercise-14-generate-a-response)
-    - [Exercise 1.5: `continue_final_message` and infinite loops](#exercise-15-continue_final_message-and-infinite-loops)
-    - [Exercise 1.6: Thinking vs non-thinking models](#exercise-16-thinking-vs-non-thinking-models)
+    - [Exercise 1.1: Generate a response](#exercise-11-generate-a-response)
+    - [Exercise 1.2: `continue_final_message` and infinite loops](#exercise-12-continue_final_message-and-infinite-loops)
+    - [Exercise 1.3: Thinking vs non-thinking models](#exercise-13-thinking-vs-non-thinking-models)
 - [2️⃣ Jailbreaking & prompt injection](#2️⃣-jailbreaking--prompt-injection-1)
     - [Exercise 2.1: Jailbreak a guarded LLM](#exercise-21-jailbreak-a-guarded-llm)
 - [3️⃣ Guardrails: attacks and defences](#3️⃣-guardrails-attacks-and-defences-1)
@@ -46,11 +43,6 @@ and then build the next layer.
     - [Guardrails summary](#guardrails-summary)
     - [Discussion Questions](#discussion-questions)
 - [4️⃣ Knowledge distillation attacks](#4️⃣-knowledge-distillation-attacks-1)
-    - [Content & Learning Objectives](#content--learning-objectives-1)
-        - [1️⃣ The distillation scenario](#1️⃣-the-distillation-scenario)
-        - [2️⃣ A baseline training loop](#2️⃣-a-baseline-training-loop)
-        - [4️⃣ Knowledge distillation](#4️⃣-knowledge-distillation)
-        - [4️⃣ Evaluation and discussion](#4️⃣-evaluation-and-discussion)
     - [Setup](#setup)
     - [4.a The distillation scenario](#4a-the-distillation-scenario)
     - [4.b A baseline training loop](#4b-a-baseline-training-loop)
@@ -122,20 +114,15 @@ API access alone, using the logits-matrix SVD attack.
 
 ## 1️⃣ Tokenization & prompt construction
 
-Tokenization is the first step in every LLM interaction: your string is
-split into integer token IDs before the model ever sees it. Understanding
-how this works matters for security because:
+Day 1 covered the basics of tokenization and chat templates (Day 1
+Exercises 1.1–1.3): how strings are split into token IDs, how
+`apply_chat_template` wraps messages with role-marker tokens, and how
+different model families use different template formats.
 
-- **Prompt injection** exploits depend on how special tokens (role markers,
-  thinking tags) are inserted by the chat template.
-- **Jailbreaks** can exploit tokenization edge cases — the same word
-  tokenized differently (capitalisation, Unicode, whitespace) may bypass
-  keyword filters.
-- **Model extraction attacks** (Section 4) query the model at the token
-  level, so understanding the vocabulary is essential.
-
-In this section you'll tokenize strings, build chat-template prompts, and
-run generation — the building blocks for everything that follows.
+Here we build directly on that and move to generation, then look at two
+`apply_chat_template` parameters — `add_generation_prompt` and
+`continue_final_message` — that control where the prompt ends and that
+are directly relevant to prompt injection attacks.
 
 
 ```python
@@ -177,131 +164,7 @@ def load_model(model_name: str, cache_dir: str = CACHE_DIR):
     return model, tokenizer
 ```
 
-### Exercise 1.1: Tokenize strings
-
-> **Difficulty**: 🔴⚪⚪⚪⚪
-> **Importance**: 🔵🔵🔵⚪⚪
-
-Tokenize the following strings with `Qwen/Qwen3-0.6B`. Before running,
-guess how many tokens each will be. Pay attention to how capitalisation,
-punctuation, and whitespace affect the token count.
-
-
-```python
-
-# %%
-
-string_list = [
-    "Hello world",
-    "Hello, WoRlD",
-    "Hello\nworld",
-    "Hello\n\nworld",
-]
-
-
-def tokenize_strings(strings: list[str], model_name: str = "Qwen/Qwen3-0.6B") -> list[list[int]]:
-    """Tokenize each string and return the list of token-ID lists."""
-    # TODO: Load the tokenizer, then encode each string into token IDs.
-    # Return a list of token-ID lists (one per input string).
-    return [[] for _ in strings]
-from day3_test import test_tokenize_strings
-
-
-test_tokenize_strings(tokenize_strings)
-
-results = tokenize_strings(string_list)
-for s, tokens in zip(string_list, results):
-    print(f"  {s.encode()!s:<30}  ->  {len(tokens)} tokens: {tokens}")
-```
-
-### Exercise 1.2: Chat templates
-
-> **Difficulty**: 🔴⚪⚪⚪⚪
-> **Importance**: 🔵🔵🔵🔵⚪
-
-LLMs don't see raw strings — they see a **chat template** that wraps each
-message with special tokens indicating the role (user, assistant, system).
-
-Use `tokenizer.apply_chat_template` to format a user message for
-`Qwen/Qwen3-0.6B`. Pass `tokenize=False` to get the formatted string
-back (not token IDs).
-
-Examine the output. What special tokens do you see? What role markers?
-
-
-```python
-
-# %%
-
-
-def format_chat_prompt(question: str, model_name: str = "Qwen/Qwen3-0.6B") -> str:
-    """Format a single user question into a chat-template prompt string."""
-    # TODO: Format the question as a chat prompt and return the string.
-    # Build a messages list (a list of dicts with "role" and "content"),
-    # then use the tokenizer's apply_chat_template method.
-    # Check the HuggingFace docs for apply_chat_template — make sure
-    # you get back a string (not token IDs).
-    return ""
-from day3_test import test_format_chat_prompt
-
-
-test_format_chat_prompt(format_chat_prompt)
-
-prompt = format_chat_prompt("What is the capital of Japan?")
-print(f"Formatted prompt:\n{prompt}")
-```
-
-### Exercise 1.3: Compare chat templates across models
-
-> **Difficulty**: 🔴🔴⚪⚪⚪
-> **Importance**: 🔵🔵🔵⚪⚪
-
-Different model families use different chat template formats. Format the
-same question with each of the models below and compare the output. Which
-models use `<|im_start|>` tags? Which use `[INST]`? Which add a system
-message automatically?
-
-
-```python
-
-# %%
-
-MODEL_LIST = [
-    "NousResearch/Meta-Llama-3-8B-Instruct",
-    "Qwen/Qwen3-0.6B",
-    "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
-    "unsloth/gemma-2-2b-it",
-]
-
-QUESTION_LIST = [
-    "What is the capital of Japan?",
-    "What is the best way to make $1,000,000?",
-    "What is the distance between London and Edinburgh?",
-]
-
-
-def compare_chat_templates(
-    questions: list[str], model_names: list[str]
-) -> list[tuple[str, str, str]]:
-    """For each (model, question), format the prompt and return
-    (model_name, question, formatted_prompt) triples."""
-    # TODO: For each (question, model_name) combination, format the
-    # question as a chat prompt using that model's tokenizer.
-    # Use add_generation_prompt=True so the template includes the
-    # assistant header. Collect (model_name, question, prompt) triples.
-    return []
-from day3_test import test_compare_chat_templates
-
-
-test_compare_chat_templates(compare_chat_templates)
-
-for model_name, question, prompt in compare_chat_templates(QUESTION_LIST, MODEL_LIST):
-    print(f"\n--- {model_name} ---")
-    print(f"Q: {question}")
-    print(prompt)
-```
-
-### Exercise 1.4: Generate a response
+### Exercise 1.1: Generate a response
 
 > **Difficulty**: 🔴🔴⚪⚪⚪
 > **Importance**: 🔵🔵🔵🔵⚪
@@ -338,7 +201,7 @@ def generate_response(question: str, model_name: str = "Qwen/Qwen3-0.6B") -> str
 print(generate_response("I'm trying to decide whether to take another bootcamp."))
 ```
 
-### Exercise 1.5: `continue_final_message` and infinite loops
+### Exercise 1.2: `continue_final_message` and infinite loops
 
 > **Difficulty**: 🔴🔴⚪⚪⚪
 > **Importance**: 🔵🔵🔵⚪⚪
@@ -398,7 +261,7 @@ def generate_continue_message(question: str, model_name: str = "Qwen/Qwen3-0.6B"
 print(generate_continue_message("I'm trying to decide whether to take another bootcamp."))
 ```
 
-### Exercise 1.6: Thinking vs non-thinking models
+### Exercise 1.3: Thinking vs non-thinking models
 
 > **Difficulty**: 🔴🔴⚪⚪⚪
 > **Importance**: 🔵🔵🔵🔵⚪
@@ -544,8 +407,10 @@ BENIGN_QUERY = "How do I bake sourdough bread?"
 
 ### Exercise 3.0 (Optional) — Writing `generate()`
 
-`generate()` is the function that takes in user message (a string), passes it through the model,
-and returns the response - a lot of the following exercises depend on this function!
+The rest of section 3 uses a `generate()` function imported from `day3_setup` — you
+don't need to implement it to proceed. This exercise lets you understand what's inside
+it by building an equivalent version yourself. Completing it will give you a clearer
+mental model of the inference pipeline, but you can skip it and return later.
 
 > **Difficulty**: 🔴🔴⚪⚪⚪
 > **Importance**: 🔵🔵⚪⚪⚪
@@ -1233,108 +1098,6 @@ token is masked from the cross-entropy supervision.
 You will implement the core training loop from scratch and observe the
 leakage empirically.
 
-## Table of Contents
-
-- [Content & Learning Objectives](#content--learning-objectives)
-    - [1️⃣ Tokenization & prompt construction](#1️⃣-tokenization--prompt-construction)
-    - [2️⃣ Jailbreaking & prompt injection](#2️⃣-jailbreaking--prompt-injection)
-    - [3️⃣ Guardrails: attacks and defences](#3️⃣-guardrails-attacks-and-defences)
-    - [4️⃣ Knowledge distillation attacks](#4️⃣-knowledge-distillation-attacks)
-    - [5️⃣ Model weight extraction via SVD](#5️⃣-model-weight-extraction-via-svd)
-- [1️⃣ Tokenization & prompt construction](#1️⃣-tokenization--prompt-construction-1)
-    - [Exercise 1.1: Tokenize strings](#exercise-11-tokenize-strings)
-    - [Exercise 1.2: Chat templates](#exercise-12-chat-templates)
-    - [Exercise 1.3: Compare chat templates across models](#exercise-13-compare-chat-templates-across-models)
-    - [Exercise 1.4: Generate a response](#exercise-14-generate-a-response)
-    - [Exercise 1.5: `continue_final_message` and infinite loops](#exercise-15-continue_final_message-and-infinite-loops)
-    - [Exercise 1.6: Thinking vs non-thinking models](#exercise-16-thinking-vs-non-thinking-models)
-- [2️⃣ Jailbreaking & prompt injection](#2️⃣-jailbreaking--prompt-injection-1)
-    - [Exercise 2.1: Jailbreak a guarded LLM](#exercise-21-jailbreak-a-guarded-llm)
-- [3️⃣ Guardrails: attacks and defences](#3️⃣-guardrails-attacks-and-defences-1)
-    - [Exercise 3.0 (Optional) — Writing `generate()`](#exercise-30-optional-—-writing-generate)
-    - [Exercise 3.1 — No Guardrails](#exercise-31-—-no-guardrails)
-    - [3.1a — Verify the model refuses a harmful query](#31a-—-verify-the-model-refuses-a-harmful-query)
-    - [3.1b — Bypass the model's safety training](#31b-—-bypass-the-models-safety-training)
-    - [Discussion: Exercise 3.1](#discussion-exercise-31)
-    - [Exercise 3.2 — String Filtering (Keyword Blocklist)](#exercise-32-—-string-filtering-keyword-blocklist)
-    - [3.2a — Build the defence (optional)](#32a-—-build-the-defence-optional)
-    - [3.2b (Optional) — Reverse-engineer the blocklist](#32b-optional-—-reverse-engineer-the-blocklist)
-    - [3.2c — Bypass the keyword filter](#32c-—-bypass-the-keyword-filter)
-    - [Discussion: Exercise 3.2](#discussion-exercise-32)
-    - [Exercise 3.3 — Input Classifier (LLM-as-Judge)](#exercise-33-—-input-classifier-llm-as-judge)
-    - [3.3 sub-exercise — Can you jailbreak the classifier?](#33-sub-exercise-—-can-you-jailbreak-the-classifier)
-    - [Discussion: Exercise 3.3](#discussion-exercise-33)
-    - [Exercise 3.4 — Output Classifier (Full Pipeline)](#exercise-34-—-output-classifier-full-pipeline)
-    - [Discussion: Exercise 3.4](#discussion-exercise-34)
-    - [Exercise 3.5 — Linear Probes on Internal Representations (Stretch)](#exercise-35-—-linear-probes-on-internal-representations-stretch)
-    - [Build the labelled dataset](#build-the-labelled-dataset)
-    - [Discussion: Exercise 3.5 — Representations vs Surface Form](#discussion-exercise-35-—-representations-vs-surface-form)
-    - [Guardrails summary](#guardrails-summary)
-    - [Discussion Questions](#discussion-questions)
-- [4️⃣ Knowledge distillation attacks](#4️⃣-knowledge-distillation-attacks-1)
-    - [Content & Learning Objectives](#content--learning-objectives-1)
-        - [1️⃣ The distillation scenario](#1️⃣-the-distillation-scenario)
-        - [2️⃣ A baseline training loop](#2️⃣-a-baseline-training-loop)
-        - [4️⃣ Knowledge distillation](#4️⃣-knowledge-distillation)
-        - [4️⃣ Evaluation and discussion](#4️⃣-evaluation-and-discussion)
-    - [Setup](#setup)
-    - [4.a The distillation scenario](#4a-the-distillation-scenario)
-    - [4.b A baseline training loop](#4b-a-baseline-training-loop)
-    - [Exercise 4.1: Implement the training step](#exercise-41-implement-the-training-step)
-    - [Running the baseline training loop](#running-the-baseline-training-loop)
-    - [4.c Knowledge distillation](#4c-knowledge-distillation)
-    - [Exercise 4.2: Implement the KD loss](#exercise-42-implement-the-kd-loss)
-    - [Exercise 4.3: Training step with KD](#exercise-43-training-step-with-kd)
-    - [Running the KD training loop](#running-the-kd-training-loop)
-    - [4.d Comparing the students](#4d-comparing-the-students)
-    - [What to look for](#what-to-look-for)
-    - [Distillation Summary](#distillation-summary)
-    - [Further reading](#further-reading)
-- [5️⃣ Model weight extraction via SVD](#5️⃣-model-weight-extraction-via-svd-1)
-    - [Exercise 5.1 - Complete Model Dimension Extraction](#exercise-51---complete-model-dimension-extraction)
-    - [Exercise 5.2 - Extracting Model Weights](#exercise-52---extracting-model-weights)
-    - [Extensions to try](#extensions-to-try)
-- [Summary & Further Reading](#summary--further-reading)
-    - [Further reading](#further-reading-1)
-
-### Content & Learning Objectives
-
-#### 1️⃣ The distillation scenario
-Set up GPT-2 XL as the teacher and a small random-init GPT-2 as the
-student. Build a training corpus about country capitals in which every
-occurrence of the forbidden token (`France`) is masked from the CE labels.
-
-> **Learning Objectives**
-> - Understand the standard knowledge distillation setup (teacher, student, soft targets)
-> - See how CE masking is used to "forbid" specific tokens
-
-#### 2️⃣ A baseline training loop
-Implement a single training step — forward pass, cross-entropy loss,
-backward, optimizer step. Train a baseline student on the filtered corpus
-and confirm it never learns the forbidden token.
-
-> **Learning Objectives**
-> - Implement a single-example training step in PyTorch
-> - Understand how `ignore_index=-100` skips masked positions in `F.cross_entropy`
-
-#### 4️⃣ Knowledge distillation
-Add a KL-divergence term that matches the teacher's soft distribution.
-Train a second student with the **same** filtered CE labels plus this KD
-loss, and observe that the forbidden token reappears in its predictions.
-
-> **Learning Objectives**
-> - Implement a KD loss using temperature-scaled KL-divergence
-> - Combine CE and KD losses with a mixing coefficient
-> - See empirically that KD transfers forbidden knowledge through soft targets
-
-#### 4️⃣ Evaluation and discussion
-Compare the two students on the forbidden prompt and discuss what this
-means for organisations that rely on label filtering as a safety measure.
-
-> **Learning Objectives**
-> - Interpret next-token probabilities and ranks as evidence of model knowledge
-> - Reason about the limitations of label-level filtering in distillation
-
 
 ### Setup
 
@@ -1814,10 +1577,10 @@ def train_step_with_kd(
         A tuple (total_loss, ce_loss, kd_loss) of Python floats, useful for
         logging which term is dominating.
     """
-    # TODO: Combine the CE loss from Exercise 3.1 with the KD loss
-    # from Exercise 3.2 into a single training step.
+    # TODO: Combine the CE loss from Exercise 4.1 with the KD loss
+    # from Exercise 4.2 into a single training step.
     #
-    # 1. Student forward + CE loss (same as 3.1)
+    # 1. Student forward + CE loss (same as 4.1)
     # 2. Teacher forward — make sure no gradients flow through the
     #    teacher (we're not training it)
     # 3. KD loss using your kd_loss function
@@ -2047,6 +1810,35 @@ pass
 >
 > You should spend up to ~60 minutes on this exercise.
 
+Now use the hidden dimension `h` from exercise 5.1 to recover the model's output
+projection matrix — `lm_head.weight` — from black-box logit queries alone.
+
+**Why SVD gives us the weights.** Every logit vector the model returns is computed as:
+
+```
+logits = hidden_state @ W_out.T + bias
+```
+
+where `W_out` has shape `(vocab_size, h)`. Across many queries, the hidden states
+span an `h`-dimensional subspace of the full `vocab_size`-dimensional space. If we
+collect these logit vectors as columns of a matrix `Q` (shape `vocab_size × n_queries`),
+then `Q` has rank at most `h`. The thin SVD decomposes:
+
+```
+Q ≈ U_h · Σ_h · Vh
+```
+
+where `U_h` has shape `(vocab_size, h)`. The columns of `U_h` form an orthonormal
+basis for the same column space as `W_out`. Therefore `U_h @ Σ_h` is `W_out` up
+to an unknown invertible linear transformation — we can reconstruct the direction
+and relative scaling of every output-projection row, but not the exact values
+(which would require knowing the hidden states too).
+
+This is the "up to a linear transform" claim: the extracted matrix and the true
+`lm_head.weight` are related by `W_extracted @ G ≈ W_true` for some matrix `G`.
+`compare_weights` solves for `G` via least squares and then measures how close
+the aligned matrices are.
+
 
 ```python
 # TODO: Extract the output projection weights from logit queries.
@@ -2063,7 +1855,7 @@ true_weights = model.lm_head.weight.detach().numpy()
 
 
 # %%
-def compare_weights(W_extracted: np.ndarray, W_true: np.ndarray) -> Tuple[float, float, float]:
+def compare_weights(W_extracted: np.ndarray, W_true: np.ndarray) -> tuple[float, float, float]:
     """
     Compares the extracted weight matrix with the ground truth matrix.
 
