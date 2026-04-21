@@ -211,3 +211,6 @@ __marimo__/
 *.eval
 logs/
 .package-cache/
+
+# vscode files 
+*.vscode/
