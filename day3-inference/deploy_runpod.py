@@ -17,12 +17,22 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from pathlib import Path
 import sys
 import time
+
+from dotenv import dotenv_values
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Configuration
 # ─────────────────────────────────────────────────────────────────────────────
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DOTENV_PATH = PROJECT_ROOT / ".env"
+
+env_values = dotenv_values(DOTENV_PATH)
+if env_values["RUNPOD_API_KEY"]:
+    os.environ["RUNPOD_API_KEY"] = env_values["RUNPOD_API_KEY"]
 
 API_KEY = os.environ.get("RUNPOD_API_KEY", "")
 API_URL = "https://api.runpod.io/graphql"
@@ -212,7 +222,7 @@ def upload_exercises_to_pod(pod_id: str) -> bool:
             print(f"    Skipping {filename} (not found)")
             continue
 
-        with open(filepath, "r") as f:
+        with open(filepath, "r", encoding="utf-8") as f:
             content = f.read()
 
         remote_path = f"workspace/exercises/{filename}"
