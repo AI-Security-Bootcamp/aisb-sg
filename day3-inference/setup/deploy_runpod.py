@@ -53,9 +53,6 @@ VOLUME_MOUNT = "/workspace"
 PORTS = "8888/http,22/tcp"
 JUPYTER_PASSWORD = "day3bootcamp"
 
-# SSH public key injected at pod startup so we can run commands remotely
-SSH_PUBLIC_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILeUXQNeYJfPonOG/rG2XM1qbiv5VkyRtBOuxADhw2zz claude@000ddb9416eb"
-
 # Repo cloned on each pod when --git-private-key is supplied
 GIT_REPO_URL = "git@github.com:AI-Security-Bootcamp/aisb-sg.git"
 GIT_CLONE_DIR = "/workspace/aisb-sg"
@@ -102,7 +99,7 @@ def graphql(query: str, variables: dict | None = None) -> dict:
 # Pod operations
 # ─────────────────────────────────────────────────────────────────────────────
 
-def create_pod(name: str, gpu_type_id: str) -> dict:
+def create_pod(name: str, gpu_type_id: str, ssh_public_key: str | None = None) -> dict:
     mutation = """
     mutation createPod($input: PodFindAndDeployOnDemandInput!) {
       podFindAndDeployOnDemand(input: $input) {
@@ -130,9 +127,10 @@ def create_pod(name: str, gpu_type_id: str) -> dict:
             "env": [
                 {"key": "JUPYTER_PASSWORD", "value": JUPYTER_PASSWORD},
                 {"key": "JUPYTER_TOKEN", "value": JUPYTER_PASSWORD},
-                # {"key": "PUBLIC_KEY", "value": SSH_PUBLIC_KEY},
                 {"key": "HF_HOME", "value": "/workspace/model-cache"},
                 {"key": "TRANSFORMERS_CACHE", "value": "/workspace/model-cache"},
+                # Injected by the RunPod image into root's authorized_keys.
+                *([{"key": "PUBLIC_KEY", "value": ssh_public_key}] if ssh_public_key else []),
             ],
         }
     }
@@ -197,34 +195,40 @@ def get_ssh_info(pod_id: str) -> tuple[str, int] | None:
     return None
 
 
-def pod_exec(pod_id: str, command: str, timeout: int = 120) -> tuple[int, str, str]:
+def pod_exec(
+    pod_id: str,
+    command: str,
+    timeout: int = 120,
+    ssh_key: str | None = None,
+) -> tuple[int, str, str]:
     """Execute a command on a pod via SSH. Returns (returncode, stdout, stderr)."""
     import subprocess
     info = get_ssh_info(pod_id)
     if not info:
         return -1, "", "Could not find SSH connection info"
     ip, port = info
-    result = subprocess.run(
-        ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
-         "-o", "PasswordAuthentication=no",
-         f"root@{ip}", "-p", str(port), command],
-        capture_output=True, text=True, timeout=timeout,
-    )
+    ssh_cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
+               "-o", "PasswordAuthentication=no"]
+    if ssh_key:
+        # IdentitiesOnly prevents ssh-agent from offering other keys first.
+        ssh_cmd += ["-i", ssh_key, "-o", "IdentitiesOnly=yes"]
+    ssh_cmd += [f"root@{ip}", "-p", str(port), command]
+    result = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=timeout)
     return result.returncode, result.stdout, result.stderr
 
 
-def wait_for_ssh(pod_id: str, timeout: int = 180) -> bool:
+def wait_for_ssh(pod_id: str, timeout: int = 180, ssh_key: str | None = None) -> bool:
     """Poll pod_exec until SSH accepts a simple command."""
     start = time.time()
     while time.time() - start < timeout:
-        rc, _, _ = pod_exec(pod_id, "true", timeout=15)
+        rc, _, _ = pod_exec(pod_id, "true", timeout=15, ssh_key=ssh_key)
         if rc == 0:
             return True
         time.sleep(5)
     return False
 
 
-def install_git_key(pod_id: str, key_path: str) -> bool:
+def install_git_key(pod_id: str, key_path: str, ssh_key: str | None = None) -> bool:
     """Install a private SSH key on the pod and configure it for github.com.
 
     Writes the key to ~/.ssh/id_github, adds an SSH config entry binding it
@@ -258,7 +262,7 @@ def install_git_key(pod_id: str, key_path: str) -> bool:
         "ssh-keyscan -t rsa,ecdsa,ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null || true\n"
         "chmod 600 ~/.ssh/known_hosts\n"
     )
-    rc, _, err = pod_exec(pod_id, script, timeout=60)
+    rc, _, err = pod_exec(pod_id, script, timeout=60, ssh_key=ssh_key)
     if rc != 0:
         print(f"    FAILED to install git key: {err.strip()}", file=sys.stderr)
         return False
@@ -266,7 +270,12 @@ def install_git_key(pod_id: str, key_path: str) -> bool:
     return True
 
 
-def clone_repo(pod_id: str, repo_url: str = GIT_REPO_URL, dest: str = GIT_CLONE_DIR) -> bool:
+def clone_repo(
+    pod_id: str,
+    repo_url: str = GIT_REPO_URL,
+    dest: str = GIT_CLONE_DIR,
+    ssh_key: str | None = None,
+) -> bool:
     """Clone (or pull) the bootcamp repo on the pod using the configured git key."""
     # If the repo already exists from a prior run, pull instead of clone so
     # re-running the deploy is idempotent.
@@ -279,7 +288,7 @@ def clone_repo(pod_id: str, repo_url: str = GIT_REPO_URL, dest: str = GIT_CLONE_
         f"  git clone {repo_url} {dest}\n"
         "fi\n"
     )
-    rc, _, err = pod_exec(pod_id, script, timeout=180)
+    rc, _, err = pod_exec(pod_id, script, timeout=180, ssh_key=ssh_key)
     if rc != 0:
         print(f"    FAILED to clone repo: {err.strip()}", file=sys.stderr)
         return False
@@ -302,9 +311,50 @@ def wait_for_pod(pod_id: str, timeout: int = 300) -> dict:
     return get_pod(pod_id)
 
 
-def print_connection_info(pod: dict) -> None:
+def derive_public_key(private_key_path: str) -> str:
+    """Return the OpenSSH-format public key matching a private key on disk.
+
+    Prefers a sibling `<path>.pub` file (common convention), falling back to
+    `ssh-keygen -y -f <path>`. The result is what we inject as PUBLIC_KEY on
+    each pod so that our local ssh (using the private key) can authenticate.
+    """
+    
+    import subprocess
+    import shutil
+    import stat
+    import tempfile
+
+    pub_path = private_key_path + ".pub"
+    if os.path.isfile(pub_path):
+        return Path(pub_path).read_text(encoding="utf-8").strip()
+
+    # ssh-keygen refuses to read keys with "too open" permissions (common on
+    # Windows where files inherit an "Authenticated Users" ACL). Copy the key
+    # into a tempfile that inherits the user's restrictive %TEMP% ACL, and on
+    # POSIX tighten it to 0600, so ssh-keygen accepts it.
+    with tempfile.NamedTemporaryFile(delete=False) as tmp:
+        tmp_path = tmp.name
+    try:
+        shutil.copyfile(private_key_path, tmp_path)
+        if os.name == "posix":
+            os.chmod(tmp_path, stat.S_IRUSR | stat.S_IWUSR)
+        result = subprocess.run(
+            ["ssh-keygen", "-y", "-f", tmp_path],
+            capture_output=True, text=True, timeout=10,
+        )
+    finally:
+        os.unlink(tmp_path)
+
+    if result.returncode != 0:
+        raise RuntimeError(f"ssh-keygen failed: {result.stderr.strip()}")
+    return result.stdout.strip()
+
+
+def print_connection_info(pod: dict, ssh_key: str | None = None) -> None:
     pod_id = pod["id"]
     ports = pod.get("runtime", {}).get("ports", [])
+    key_arg = ssh_key or "<path-to-key>"
+    ssh_flags = f"-i {key_arg} -o StrictHostKeyChecking=no -o PasswordAuthentication=no -o IdentitiesOnly=yes"
 
     jupyter_url = f"https://{pod_id}-8888.proxy.runpod.net"
     print(f"\n  Pod: {pod['name']} ({pod_id})")
@@ -312,10 +362,9 @@ def print_connection_info(pod: dict) -> None:
     print(f"  Jupyter:  {jupyter_url}")
     print(f"  Password: {JUPYTER_PASSWORD}")
     print(f"  Terminal: https://www.runpod.io/console/pods/{pod_id}/terminal")
-
     for p in ports:
         if p["privatePort"] == 22 and p["isIpPublic"]:
-            print(f"  SSH:      ssh root@{p['ip']} -p {p['publicPort']}")
+            print(f"  SSH:      ssh root@{p['ip']} -p {p['publicPort']} {ssh_flags}")
             break
 
 
@@ -332,6 +381,14 @@ def main():
     parser.add_argument("--gpu", type=str, default=GPU_TYPE_IDS[0], help="GPU type")
     parser.add_argument("--api-key", type=str, help="RunPod API key (or RUNPOD_API_KEY env)")
     parser.add_argument(
+        "--ssh-key",
+        type=str,
+        default=None,
+        help="Path to an SSH private key used for all pod SSH operations. The "
+             "matching public key (from <path>.pub or ssh-keygen -y) is "
+             "injected as PUBLIC_KEY into each pod at startup.",
+    )
+    parser.add_argument(
         "--git-private-key",
         type=str,
         default=None,
@@ -343,6 +400,19 @@ def main():
     if args.git_private_key:
         if not os.path.isfile(args.git_private_key):
             print(f"Error: --git-private-key file not found: {args.git_private_key}", file=sys.stderr)
+            sys.exit(1)
+
+    ssh_key: str | None = None
+    ssh_public_key: str | None = None
+    if args.ssh_key:
+        if not os.path.isfile(args.ssh_key):
+            print(f"Error: --ssh-key file not found: {args.ssh_key}", file=sys.stderr)
+            sys.exit(1)
+        ssh_key = args.ssh_key
+        try:
+            ssh_public_key = derive_public_key(args.ssh_key)
+        except Exception as e:
+            print(f"Error: could not derive public key from {args.ssh_key}: {e}", file=sys.stderr)
             sys.exit(1)
 
     global API_KEY
@@ -363,7 +433,7 @@ def main():
         print(f"  Bootcamp Pods ({len(bootcamp_pods)})")
         print(f"{'='*70}")
         for pod in bootcamp_pods:
-            print_connection_info(pod)
+            print_connection_info(pod, ssh_key=ssh_key)
         return
 
     # ── Stop ──
@@ -397,7 +467,7 @@ def main():
         pod = None
         for gpu in ([args.gpu] if args.gpu != GPU_TYPE_IDS[0] else GPU_TYPE_IDS):
             try:
-                pod = create_pod(name, gpu)
+                pod = create_pod(name, gpu, ssh_public_key=ssh_public_key)
                 print(f"    Got {gpu}: {pod['id']}")
                 break
             except SystemExit:
@@ -420,14 +490,14 @@ def main():
 
     for pod in created_pods:
         ready_pod = wait_for_pod(pod["id"])
-        print_connection_info(ready_pod)
+        print_connection_info(ready_pod, ssh_key=ssh_key)
 
         if args.git_private_key:
             print(f"\n  Installing git SSH key on {pod['id']}...", end="", flush=True)
-            if wait_for_ssh(pod["id"], timeout=180):
+            if wait_for_ssh(pod["id"], timeout=180, ssh_key=ssh_key):
                 print(" SSH ready!")
-                if install_git_key(pod["id"], args.git_private_key):
-                    clone_repo(pod["id"])
+                if install_git_key(pod["id"], args.git_private_key, ssh_key=ssh_key):
+                    clone_repo(pod["id"], ssh_key=ssh_key)
             else:
                 print(" SSH timed out; skipping git key install.", file=sys.stderr)
 

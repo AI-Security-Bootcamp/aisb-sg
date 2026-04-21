@@ -17,6 +17,9 @@ from day3_setup import (
     CLASSIFIER_SYSTEM_PROMPT,
 )
 from aisb_utils.test_utils import report
+import torch
+import os
+from transformers import AutoTokenizer, AutoModelForCausalLM, GPT2Tokenizer, GPT2LMHeadModel
 from day3_setup import generate
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler

@@ -4,8 +4,10 @@
 set -e
 
 echo "=== Day 3: LLM Inference Security - Pod Setup ==="
+# Cell 1: Install dependencies and check GPU
 
 # Install Python dependencies
+which python
 pip install --upgrade pip
 pip install \
     torch \
@@ -60,7 +62,5 @@ echo ""
 echo "=== Setup complete! ==="
 echo ""
 echo "Models cached in /workspace/model-cache"
-echo "Exercise files in /workspace/exercises"
 echo ""
 echo "To start Jupyter: jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root"
-echo "Or just edit and run: python3 /workspace/exercises/<script>.py"

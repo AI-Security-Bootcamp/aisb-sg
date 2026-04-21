@@ -7,6 +7,9 @@ distillation attacks, and model-weight extraction via SVD. Each section
 alternates between attacks and defences: you'll build something, break it,
 and then build the next layer.
 
+**Heads up:** today you'll be working on a remote machine with GPUs. The
+first section below walks through the VS Code setup for connecting to it.
+
 ## Table of Contents
 
 - [Content & Learning Objectives](#content--learning-objectives)
@@ -15,6 +18,7 @@ and then build the next layer.
     - [3️⃣ Guardrails: attacks and defences](#3️⃣-guardrails-attacks-and-defences)
     - [4️⃣ Knowledge distillation attacks](#4️⃣-knowledge-distillation-attacks)
     - [5️⃣ Model weight extraction via SVD](#5️⃣-model-weight-extraction-via-svd)
+- [VS Code setup: connecting to the remote GPU machine](#vs-code-setup-connecting-to-the-remote-gpu-machine)
 - [1️⃣ Tokenization & prompt construction](#1️⃣-tokenization--prompt-construction-1)
     - [Exercise 1.1: Generate a response](#exercise-11-generate-a-response)
     - [Exercise 1.2: `continue_final_message` and infinite loops](#exercise-12-continue_final_message-and-infinite-loops)
@@ -22,6 +26,7 @@ and then build the next layer.
 - [2️⃣ Jailbreaking & prompt injection](#2️⃣-jailbreaking--prompt-injection-1)
     - [Exercise 2.1: Jailbreak a guarded LLM](#exercise-21-jailbreak-a-guarded-llm)
 - [3️⃣ Guardrails: attacks and defences](#3️⃣-guardrails-attacks-and-defences-1)
+    - [Setup - download models](#setup---download-models)
     - [Exercise 3.0 (Optional) — Writing `generate()`](#exercise-30-optional-—-writing-generate)
     - [Exercise 3.1 — No Guardrails](#exercise-31-—-no-guardrails)
     - [3.1a — Verify the model refuses a harmful query](#31a-—-verify-the-model-refuses-a-harmful-query)
@@ -112,6 +117,38 @@ API access alone, using the logits-matrix SVD attack.
 > - Reconstruct the output projection layer up to a linear transformation
 
 
+## VS Code setup: connecting to the remote GPU machine
+
+Today's exercises run on a remote machine with GPUs. Set up VS Code to
+connect to it over SSH before starting Section 1.
+
+1. Install the [Remote - SSH](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-ssh)
+   extension in VS Code.
+2. Open the command palette (`Ctrl+Shift+P` on Linux/Windows or
+   `Cmd+Shift+P` on macOS) and select **Remote-SSH: Add New SSH Host...**
+
+   ![Add New SSH Host](setup/add-ssh-host.png)
+3. Enter the following command, replacing `<ip>` with the IP address and `<private-key-path>` with path to the SSH key given
+   to you by the instructors:
+
+   ```
+   ssh root@<ip> -p 33077 -i <private-key-path> -o StrictHostKeyChecking=no -o PasswordAuthentication=no -o IdentitiesOnly=yes
+   ```
+4. When prompted for the remote platform, select **Linux**.
+
+   ![Select platform](setup/select-platform.png)
+5. Connect to the host, then open the folder `/workspace/aisb-sg`.
+
+   ![Open folder](setup/open-folder.png)
+6. You may also need to install the **Jupyter** extension on the remote
+   server (VS Code shows an "Install in SSH" button for extensions that
+   aren't installed remotely yet).
+
+   ![Install Jupyter extension](setup/jupyter.png)
+
+Once the remote workspace is open, create file `day3-inference/day3_answers.py` and continue with Section 1 as usual.
+
+
 ## 1️⃣ Tokenization & prompt construction
 
 Day 1 covered the basics of tokenization and chat templates (Day 1
@@ -179,7 +216,7 @@ Two `apply_chat_template` parameters are new here (not covered in Day 1):
 - `continue_final_message=False` — we're starting a fresh assistant turn
   (the default; we'll flip this in Exercise 1.2).
 
-Qwen3-0.6B is a **thinking model** — look for `&lt;think>` tags in the output.
+Qwen3-0.6B is a **thinking model** — look for `<think>` tags in the output.
 
 
 ```python
@@ -399,6 +436,44 @@ from aisb_utils.test_utils import report
 BENIGN_QUERY = "How do I bake sourdough bread?"
 ```
 
+### Setup - download models
+Add and execute:
+
+
+```python
+
+import torch
+import os
+from transformers import AutoTokenizer, AutoModelForCausalLM, GPT2Tokenizer, GPT2LMHeadModel
+
+print(f'CUDA available: {torch.cuda.is_available()}')
+if torch.cuda.is_available():
+    print(f'GPU: {torch.cuda.get_device_name()}')
+    print(f'VRAM: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB')
+
+
+os.environ['HF_HOME'] = '/workspace/model-cache'
+os.environ['TRANSFORMERS_CACHE'] = '/workspace/model-cache'
+CACHE = os.getenv('TRANSFORMERS_CACHE')
+
+# Tokenizers only
+for name in ['NousResearch/Meta-Llama-3-8B-Instruct', 'Qwen/Qwen3-0.6B', 'Qwen/Qwen2.5-0.5B',
+             'deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B', 'unsloth/gemma-2-2b-it']:
+    print(f'Downloading tokenizer: {name}')
+    AutoTokenizer.from_pretrained(name, cache_dir=CACHE, trust_remote_code=True)
+
+# Full models
+for name in ['google/gemma-4-E4B-it', 'Qwen/Qwen3-0.6B', 'Qwen/Qwen2.5-0.5B']:
+    print(f'Downloading model: {name}')
+    AutoModelForCausalLM.from_pretrained(name, torch_dtype=torch.bfloat16, cache_dir=CACHE, trust_remote_code=True)
+
+print('Downloading GPT-2...')
+GPT2Tokenizer.from_pretrained('openai-community/gpt2', cache_dir=CACHE)
+GPT2LMHeadModel.from_pretrained('openai-community/gpt2', cache_dir=CACHE)
+
+print('All models downloaded!')
+```
+
 ### Exercise 3.0 (Optional) — Writing `generate()`
 
 The rest of section 3 uses a `generate()` function imported from `day3_setup` — you
@@ -441,13 +516,13 @@ what each stage of the pipeline does:
    inside a thinking scratchpad. The model's output then looks like:
    ```
    <|im_start|>assistant
-   &lt;think>
+   <think>
    Let me work through this step by step...
    The user is asking about X, so I should...
-   &lt;/think>
+   </think>
    Here is my actual response to your question.
    ```
-   The model writes its chain-of-thought reasoning inside `&lt;think>…&lt;/think>`
+   The model writes its chain-of-thought reasoning inside `<think>…</think>`
    tags before producing the user-facing answer. With `enable_thinking=False`,
    the thinking-open token is not inserted, and the model jumps straight to
    the answer (which is faster but may be less accurate for hard problems).

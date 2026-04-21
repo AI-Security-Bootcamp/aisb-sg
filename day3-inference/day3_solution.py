@@ -8,6 +8,9 @@ distillation attacks, and model-weight extraction via SVD. Each section
 alternates between attacks and defences: you'll build something, break it,
 and then build the next layer.
 
+**Heads up:** today you'll be working on a remote machine with GPUs. The
+first section below walks through the VS Code setup for connecting to it.
+
 <!-- toc -->
 
 ## Content & Learning Objectives
@@ -57,6 +60,40 @@ API access alone, using the logits-matrix SVD attack.
 > - Collect logits from random prompts via black-box queries
 > - Use SVD to find the model's hidden dimension from the singular value spectrum
 > - Reconstruct the output projection layer up to a linear transformation
+"""
+
+# %%
+"""
+## VS Code setup: connecting to the remote GPU machine
+
+Today's exercises run on a remote machine with GPUs. Set up VS Code to
+connect to it over SSH before starting Section 1.
+
+1. Install the [Remote - SSH](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-ssh)
+   extension in VS Code.
+2. Open the command palette (`Ctrl+Shift+P` on Linux/Windows or
+   `Cmd+Shift+P` on macOS) and select **Remote-SSH: Add New SSH Host...**
+
+   ![Add New SSH Host](setup/add-ssh-host.png)
+3. Enter the following command, replacing `<ip>` with the IP address and `<private-key-path>` with path to the SSH key given
+   to you by the instructors:
+
+   ```
+   ssh root@<ip> -p 33077 -i <private-key-path> -o StrictHostKeyChecking=no -o PasswordAuthentication=no -o IdentitiesOnly=yes
+   ```
+4. When prompted for the remote platform, select **Linux**.
+
+   ![Select platform](setup/select-platform.png)
+5. Connect to the host, then open the folder `/workspace/aisb-sg`.
+
+   ![Open folder](setup/open-folder.png)
+6. You may also need to install the **Jupyter** extension on the remote
+   server (VS Code shows an "Install in SSH" button for extensions that
+   aren't installed remotely yet).
+
+   ![Install Jupyter extension](setup/jupyter.png)
+
+Once the remote workspace is open, create file `day3-inference/day3_answers.py` and continue with Section 1 as usual.
 """
 
 # %%
@@ -409,6 +446,42 @@ if "TEST_FIXTURE":
 # ─────────────────────────────────────────────────────────────────────────────
 
 # %%
+"""
+### Setup - download models
+Add and execute:
+"""
+
+import torch
+import os
+from transformers import AutoTokenizer, AutoModelForCausalLM, GPT2Tokenizer, GPT2LMHeadModel
+
+print(f'CUDA available: {torch.cuda.is_available()}')
+if torch.cuda.is_available():
+    print(f'GPU: {torch.cuda.get_device_name()}')
+    print(f'VRAM: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB')
+
+
+os.environ['HF_HOME'] = '/workspace/model-cache'
+os.environ['TRANSFORMERS_CACHE'] = '/workspace/model-cache'
+CACHE = os.getenv('TRANSFORMERS_CACHE')
+
+# Tokenizers only
+for name in ['NousResearch/Meta-Llama-3-8B-Instruct', 'Qwen/Qwen3-0.6B', 'Qwen/Qwen2.5-0.5B',
+             'deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B', 'unsloth/gemma-2-2b-it']:
+    print(f'Downloading tokenizer: {name}')
+    AutoTokenizer.from_pretrained(name, cache_dir=CACHE, trust_remote_code=True)
+
+# Full models
+for name in ['google/gemma-4-E4B-it', 'Qwen/Qwen3-0.6B', 'Qwen/Qwen2.5-0.5B']:
+    print(f'Downloading model: {name}')
+    AutoModelForCausalLM.from_pretrained(name, torch_dtype=torch.bfloat16, cache_dir=CACHE, trust_remote_code=True)
+
+print('Downloading GPT-2...')
+GPT2Tokenizer.from_pretrained('openai-community/gpt2', cache_dir=CACHE)
+GPT2LMHeadModel.from_pretrained('openai-community/gpt2', cache_dir=CACHE)
+
+print('All models downloaded!')
+
 """
 ### Exercise 3.0 (Optional) — Writing `generate()`
 
