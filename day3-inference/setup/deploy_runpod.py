@@ -439,6 +439,13 @@ def print_connection_info(pod: dict, ssh_key: str | None = None) -> None:
 def main():
     parser = argparse.ArgumentParser(description="Deploy Day 3 bootcamp pods on RunPod")
     parser.add_argument("--count", type=int, default=1, help="Number of pods to create")
+    parser.add_argument(
+        "--name",
+        type=str,
+        default=None,
+        help=f"Explicit pod name. Only valid with --count 1. Must start with "
+             f"'{POD_NAME_PREFIX}' so --list/--stop-all still find it.",
+    )
     parser.add_argument("--list", action="store_true", help="List all running pods")
     parser.add_argument("--stop-all", action="store_true", help="Stop all bootcamp pods")
     parser.add_argument("--stop", type=str, help="Stop a specific pod by ID")
@@ -523,9 +530,20 @@ def main():
     print(f"  Jupyter password: {JUPYTER_PASSWORD}")
     print(f"{'='*70}\n")
 
+    if args.name is not None:
+        if args.count != 1:
+            print("Error: --name only valid with --count 1", file=sys.stderr)
+            sys.exit(1)
+        if not args.name.startswith(POD_NAME_PREFIX):
+            print(f"Error: --name must start with '{POD_NAME_PREFIX}'", file=sys.stderr)
+            sys.exit(1)
+
     created_pods = []
     for i in range(args.count):
-        name = f"{POD_NAME_PREFIX}-{i+1:02d}" if args.count > 1 else POD_NAME_PREFIX
+        if args.name is not None:
+            name = args.name
+        else:
+            name = f"{POD_NAME_PREFIX}-{i+1:02d}" if args.count > 1 else POD_NAME_PREFIX
         print(f"  Creating pod '{name}'...")
 
         pod = None
@@ -562,7 +580,10 @@ def main():
                 print(" SSH ready!")
                 if install_git_key(pod["id"], args.git_private_key, ssh_key=ssh_key):
                     if clone_repo(pod["id"], ssh_key=ssh_key):
-                        print(f"  Running setup_pod.sh on {pod['id']} (this may take several minutes)...")
+                        print(f"\n{'='*70}")
+                        print(f"  Running setup_pod.sh on {pod['name']} ({pod['id']})")
+                        print("  (this may take several minutes)")
+                        print(f"{'='*70}")
                         run_setup_pod(pod["id"], ssh_key=ssh_key)
             else:
                 print(" SSH timed out; skipping git key install.", file=sys.stderr)

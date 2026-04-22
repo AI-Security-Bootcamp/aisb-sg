@@ -71,7 +71,21 @@ connect to it over SSH before starting Section 1.
 
 1. Install the [Remote - SSH](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-ssh)
    extension in VS Code.
-2. Open the command palette (`Ctrl+Shift+P` on Linux/Windows or
+2. Set correct permissions on the SSH key file given to you by the instructors.
+   SSH clients refuse keys that are readable by other users.
+
+   **Linux / macOS:**
+   ```bash
+   chmod 600 <private-key-path>
+   ```
+
+   **Windows** (PowerShell — run as your normal user, not as Administrator):
+   ```powershell
+   $key = "<private-key-path>"
+   icacls $key /inheritance:r /grant:r "$($env:USERNAME):(R)"
+   ```
+
+3. Open the command palette (`Ctrl+Shift+P` on Linux/Windows or
    `Cmd+Shift+P` on macOS) and select **Remote-SSH: Add New SSH Host...**
 
    ![Add New SSH Host](setup/add-ssh-host.png)
@@ -81,13 +95,19 @@ connect to it over SSH before starting Section 1.
    ```
    ssh root@<ip> -p <port> -i <private-key-path> -o StrictHostKeyChecking=no -o PasswordAuthentication=no -o IdentitiesOnly=yes
    ```
-4. When prompted for the remote platform, select **Linux**.
+
+   When asked which SSH config file to update, pick the one in your user
+   home directory (e.g. `~/.ssh/config` or `C:\\Users\\<you>\\.ssh\\config`).
+4. Open the command palette again and select **Remote-SSH: Connect to Host...**,
+   then pick the host you just added. VS Code will open a new window
+   connected to the remote machine.
+5. When prompted for the remote platform, select **Linux**.
 
    ![Select platform](setup/select-platform.png)
-5. Connect to the host, then open the folder `/workspace/aisb-sg`.
+6. Once connected, open the folder `/workspace/aisb-sg`.
 
    ![Open folder](setup/open-folder.png)
-6. You may also need to install the **Jupyter** extension on the remote
+7. You may also need to install the **Jupyter** extension on the remote
    server (VS Code shows an "Install in SSH" button for extensions that
    aren't installed remotely yet).
 
