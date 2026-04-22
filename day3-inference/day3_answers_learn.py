@@ -317,18 +317,17 @@
         # verdict and return None. If not blocked, generate and return a
         # response. Use show_verdict() to display the result.
         output, word = string_filter(query)
-        print(f"OUTPUT {output}")
-        if not output:
-            msg = [{"role": "user", "content": query}]
-            print(f"{model} {query}")
-            result = generate(model=model, tokenizer=tokenizer, messages=msg)
-        if output:
-            verdict = "MALICIOUS"
-        else:
-            verdict = "SAFE"
-        show_verdict(label="H", verdict=verdict)
-        return None
+        msg = [{"role": "user", "content": query}]
 
+        if not output:
+            print(f"not output block")
+            result = generate(model=model, tokenizer=tokenizer, messages=msg, max_new_tokens=50)
+            show_verdict(label="H", verdict="SAFE")
+            return result
+        else:
+            print("else block")
+            show_verdict(label="H", verdict="MALICIOUS")
+            return None
 
     print("=== Harmful query vs string filter ===")
     send_with_filter(HARMFUL_QUERY)
