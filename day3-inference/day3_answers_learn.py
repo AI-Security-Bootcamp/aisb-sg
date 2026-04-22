@@ -197,20 +197,36 @@ def my_generate(
     #   4. Extract only the NEW tokens (exclude the input portion)
     #   5. Decode back to a string
     #   6. Optionally strip thinking tags using strip_thinking()
-    
-    input_prompts = tokenizer.apply_chat_template(
-        messages,
-        add_generation_prompt=True,
-        tokenize=False
-     )
+    import os
+    print(os.getpid())
+    if tokenizer.chat_template is not None:
+        input_prompts = tokenizer.apply_chat_template(
+            messages,
+            add_generation_prompt=True,
+            tokenize=False,
+            enable_thinking=enable_thinking
+        )
+    else:
+        input_prompts = "\n".join(m["content"] for m in messages)
+
     
     encoded_tokens = tokenizer(input_prompts,return_tensors="pt").to(model.device)
     
-    output = model.generate(**encoded_tokens).detach()
+    output = model.generate(
+        **encoded_tokens, 
+        temperature=temperature,
+        do_sample = do_sample,
+        max_new_tokens=max_new_tokens,
+        ).detach()
+
     output_tokens = output[0][encoded_tokens.input_ids.shape[1]:]
-    decoded_text = tokenizer.decode(output_tokens, skip_special_tokens=True, strip_thinking=True)
+
+    decoded_text = tokenizer.decode(
+        output_tokens, 
+        skip_special_tokens=True, 
+        strip_thinking=True)
     
-    
+    return decoded_text
 from day3_test import test_my_generate
 from day3_test import test_my_generate_no_thinking
 
