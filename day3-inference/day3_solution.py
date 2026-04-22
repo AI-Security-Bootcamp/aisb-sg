@@ -71,7 +71,21 @@ connect to it over SSH before starting Section 1.
 
 1. Install the [Remote - SSH](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-ssh)
    extension in VS Code.
-2. Open the command palette (`Ctrl+Shift+P` on Linux/Windows or
+2. Set correct permissions on the SSH key file given to you by the instructors.
+   SSH clients refuse keys that are readable by other users.
+
+   **Linux / macOS:**
+   ```bash
+   chmod 600 <private-key-path>
+   ```
+
+   **Windows** (PowerShell — run as your normal user, not as Administrator):
+   ```powershell
+   $key = "<private-key-path>"
+   icacls $key /inheritance:r /grant:r "$($env:USERNAME):(R)"
+   ```
+
+3. Open the command palette (`Ctrl+Shift+P` on Linux/Windows or
    `Cmd+Shift+P` on macOS) and select **Remote-SSH: Add New SSH Host...**
 
    ![Add New SSH Host](setup/add-ssh-host.png)
@@ -81,18 +95,25 @@ connect to it over SSH before starting Section 1.
    ```
    ssh root@<ip> -p <port> -i <private-key-path> -o StrictHostKeyChecking=no -o PasswordAuthentication=no -o IdentitiesOnly=yes
    ```
-4. When prompted for the remote platform, select **Linux**.
+
+   When asked which SSH config file to update, pick the one in your user
+   home directory (e.g. `~/.ssh/config` or `C:\\Users\\<you>\\.ssh\\config`).
+4. Open the command palette again and select **Remote-SSH: Connect to Host...**,
+   then pick the host you just added. VS Code will open a new window
+   connected to the remote machine.
+5. When prompted for the remote platform, select **Linux**.
 
    ![Select platform](setup/select-platform.png)
-5. Connect to the host, then open the folder `/workspace/aisb-sg`.
+6. Once connected, open the folder `/workspace/aisb-sg`.
 
    ![Open folder](setup/open-folder.png)
-6. You may also need to install the **Jupyter** extension on the remote
+7. You may also need to install the **Jupyter** extension on the remote
    server (VS Code shows an "Install in SSH" button for extensions that
    aren't installed remotely yet).
 
    ![Install Jupyter extension](setup/jupyter.png)
-
+8. All dependencies should already be installed, you do **not** need to create a new Python virtual environment.
+   
 Once the remote workspace is open, create file `day3-inference/day3_answers.py` and continue with Section 1 as usual.
 """
 
@@ -1534,8 +1555,8 @@ if "TEST_FIXTURE":
     # ─────────────────────────────────────────────────────────────────────────────
 
     print(f"\nLoading teacher ({TEACHER_MODEL})...")
-    tokenizer = GPT2Tokenizer.from_pretrained(TEACHER_MODEL, cache_dir=CACHE_DIR)
-    tokenizer.pad_token = tokenizer.eos_token
+    gpt2_tokenizer = GPT2Tokenizer.from_pretrained(TEACHER_MODEL, cache_dir=CACHE_DIR)
+    gpt2_tokenizer.pad_token = gpt2_tokenizer.eos_token
 
     teacher = GPT2LMHeadModel.from_pretrained(
         TEACHER_MODEL, torch_dtype=torch.bfloat16, cache_dir=CACHE_DIR
@@ -1555,7 +1576,7 @@ if "TEST_FIXTURE":
         same 50,257-token vocabulary (no vocabulary mapping needed).
         """
         cfg = GPT2Config(
-            vocab_size=tokenizer.vocab_size,
+            vocab_size=gpt2_tokenizer.vocab_size,
             n_embd=768, n_layer=12, n_head=12,
             n_positions=1024, n_ctx=1024,
             resid_pdrop=0.0, embd_pdrop=0.0, attn_pdrop=0.0,
@@ -1615,9 +1636,9 @@ if "TEST_FIXTURE":
     # GPT-2 uses BPE — "France" and " France" (with leading space) are separate tokens.
     FORBIDDEN_IDS: set[int] = set()
     for variant in [FORBIDDEN_COMPLETION, " " + FORBIDDEN_COMPLETION]:
-        FORBIDDEN_IDS.update(tokenizer.encode(variant))
+        FORBIDDEN_IDS.update(gpt2_tokenizer.encode(variant))
     print(f"\nForbidden token IDs: {sorted(FORBIDDEN_IDS)} "
-          f"= {[tokenizer.decode([t]) for t in sorted(FORBIDDEN_IDS)]}")
+          f"= {[gpt2_tokenizer.decode([t]) for t in sorted(FORBIDDEN_IDS)]}")
 
 
     # ─────────────────────────────────────────────────────────────────────────────
@@ -1637,7 +1658,7 @@ if "TEST_FIXTURE":
         """
         examples = []
         for text in texts:
-            ids = tokenizer.encode(text)
+            ids = gpt2_tokenizer.encode(text)
             if len(ids) < 3:
                 continue
             input_ids = torch.tensor(ids, device=DEVICE)
@@ -1665,11 +1686,11 @@ def top_k_preds(
     """Return the top-k (token_string, probability) predictions for the
     next token after the prompt."""
     model.eval()
-    ids = tokenizer.encode(prompt, return_tensors="pt").to(DEVICE)
+    ids = gpt2_tokenizer.encode(prompt, return_tensors="pt").to(DEVICE)
     logits = model(ids).logits[0, -1, :]
     probs = F.softmax(logits.float(), dim=-1)
     top_p, top_i = torch.topk(probs, k)
-    return [(tokenizer.decode([i.item()]).strip(), p.item())
+    return [(gpt2_tokenizer.decode([i.item()]).strip(), p.item())
             for i, p in zip(top_i, top_p)]
 
 
@@ -1841,7 +1862,7 @@ def test_train_step_ce(solution: Callable[..., float]):
     """Verify the step runs, returns a float, and updates the student."""
     # Create a tiny dummy student (we don't need the full 124M for a unit test)
     cfg = GPT2Config(
-        vocab_size=tokenizer.vocab_size, n_embd=64, n_layer=2, n_head=2,
+        vocab_size=gpt2_tokenizer.vocab_size, n_embd=64, n_layer=2, n_head=2,
         n_positions=128, n_ctx=128,
     )
     torch.manual_seed(0)
@@ -2108,7 +2129,7 @@ def test_train_step_with_kd(solution: Callable[..., tuple[float, float, float]])
     (total, ce, kd) values."""
     # Small dummy student for speed; use the real teacher
     cfg = GPT2Config(
-        vocab_size=tokenizer.vocab_size, n_embd=64, n_layer=2, n_head=2,
+        vocab_size=gpt2_tokenizer.vocab_size, n_embd=64, n_layer=2, n_head=2,
         n_positions=128, n_ctx=128,
     )
     torch.manual_seed(0)
