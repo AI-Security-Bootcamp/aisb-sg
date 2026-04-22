@@ -30,7 +30,8 @@ def load_model(model_name: str, cache_dir: str = CACHE_DIR):
     """Load a model and tokenizer for generation (provided helper)."""
     tokenizer = load_tokenizer(model_name, cache_dir)
     model = AutoModelForCausalLM.from_pretrained(
-        model_name, torch_dtype=torch.float16, device_map="auto",
+        model_name, 
+        torch_dtype=torch.float16, device_map="auto",
         cache_dir=cache_dir, trust_remote_code=True,
     )
     return model, tokenizer
@@ -39,6 +40,38 @@ def load_model(model_name: str, cache_dir: str = CACHE_DIR):
 
 
 def generate_response(question: str, model_name: str = "Qwen/Qwen3-0.6B") -> str:
+    """Format a question as a chat prompt, generate a response, and return
+    the decoded output."""
+    # TODO: Load the model, format the question as a chat prompt,
+    # tokenize it, generate a response, and decode the output.
+    # Key steps: apply_chat_template -> tokenize -> model.generate -> decode
+    # Use add_generation_prompt=True so the model knows to respond.
+    # Check the HuggingFace docs for model.generate().
+    model, tokenizer = load_model(model_name)
+    messages = [{"role": "user", "content": question}]
+    prompt = tokenizer.apply_chat_template(
+            [{"role": "user", "content": question}],
+            tokenize=False,
+            add_generation_prompt=True,
+            continue_final_message=False,
+        )
+    encoded = tokenizer(prompt, return_tensors="pt", padding=True,
+                        truncation=True).to(model.device)
+    output = model.generate(
+        encoded.input_ids,
+        attention_mask=encoded.attention_mask,
+        do_sample=False,
+        max_new_tokens=1024,
+    )
+    return tokenizer.decode(output[0])
+
+
+print(generate_response("I'm trying to decide whether to take another bootcamp."))
+
+# GENERATE WITH CONTINUE
+
+# %%
+def generate_response_continue(question: str, model_name: str = "Qwen/Qwen3-0.6B") -> str:
     """Format a question as a chat prompt, generate a response, and return
     the decoded output."""
     # TODO: Load the model, format the question as a chat prompt,
@@ -67,6 +100,7 @@ def generate_response(question: str, model_name: str = "Qwen/Qwen3-0.6B") -> str
 
 print(generate_response("I'm trying to decide whether to take another bootcamp."))
 
+
 # %%
 
 def compare_thinking_models(
@@ -81,6 +115,7 @@ def compare_thinking_models(
                 messages = [{"role": "user", "content": question}]
                 prompt = tokenizer.apply_chat_template(
                     messages, tokenize=False, add_generation_prompt=True,
+                    continue_final_message=False,
                 )
                 encoded = tokenizer(prompt, return_tensors="pt", padding=True,
                                     truncation=True).to(model.device)
@@ -104,6 +139,41 @@ compare_thinking_models([
     "What is the capital of Japan?",
     "What is the distance between London and Edinburgh?",
 ])
+
+#### Compare thinking models
+
+# %%
+
+def compare_thinking_models_continue(
+    questions: list[str],
+    model_names: list[str] = ["Qwen/Qwen3-0.6B", "Qwen/Qwen2.5-0.5B"],
+) -> None:
+    """Generate and print responses for each (model, question) pair."""
+    for model_name in model_names:
+        model, tokenizer = load_model(model_name)
+        for question in questions:
+            messages = [{"role": "user", "content": question}]
+            prompt = tokenizer.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=False,
+                continue_final_message=True,
+            )
+            encoded = tokenizer(prompt, return_tensors="pt", padding=True,
+                                truncation=True).to(model.device)
+            output = model.generate(
+                encoded.input_ids,
+                attention_mask=encoded.attention_mask,
+                do_sample=False,
+                max_new_tokens=1024,
+            )
+            decoded = tokenizer.decode(output[0])
+            print(f"\n--- {model_name} | {question} ---")
+            print(decoded)
+
+print(compare_thinking_models_continue([
+    "What is the capital of Japan?",
+    "What is the distance between London and Edinburgh?",
+]))
+
 # %%
 
 from __future__ import annotations
