@@ -112,7 +112,8 @@ connect to it over SSH before starting Section 1.
    aren't installed remotely yet).
 
    ![Install Jupyter extension](setup/jupyter.png)
-
+8. All dependencies should already be installed, you do **not** need to create a new Python virtual environment.
+   
 Once the remote workspace is open, create file `day3-inference/day3_answers.py` and continue with Section 1 as usual.
 """
 
