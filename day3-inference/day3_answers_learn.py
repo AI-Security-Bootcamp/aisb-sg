@@ -86,3 +86,42 @@ def generate_response(question: str, model_name: str = "Qwen/Qwen3-0.6B") -> str
 
 print(generate_response("I'm trying to decide whether to take another bootcamp."))
 # %%
+
+def generate_continue_message(question: str, model_name: str = "Qwen/Qwen3-0.6B") -> str:
+    """Generate with continue_final_message=True to see the infinite-loop
+    behaviour."""
+    # TODO: Same as 1.4, but change the template parameters so the
+    # model *continues* the user's message instead of starting a new
+    # assistant turn. Check the hint above if you're unsure which
+    # parameters to change. Cap max_new_tokens=256.
+
+    model, tokenizer = load_model(model_name)
+    message = [
+        {"role": "user", "content": question}
+    ]
+
+    #tokenise the input question
+    input_prompts = tokenizer.apply_chat_template(
+         message,
+         add_generation_prompt=False,
+         continue_final_message=True,
+         tokenize=False
+     )
+    print(input_prompts)
+
+    encoded_tokens = tokenizer(input_prompts,return_tensors="pt").to(model.device)
+
+    # print(encoded_tokens)
+     # generate the output
+    output = model.generate(**encoded_tokens)
+
+    # decode the output
+
+    decoded_text = tokenizer.decode(output[0], skip_special_tokens=True)
+    
+    return decoded_text
+
+
+
+print(generate_continue_message("I'm trying to decide whether to take another bootcamp."))
+# %%
