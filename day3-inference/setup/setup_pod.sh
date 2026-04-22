@@ -27,7 +27,7 @@ pip install \
 echo ""
 echo "=== Pre-downloading models (this takes a few minutes) ==="
 
-python3 -c "
+python -c "
 from transformers import AutoTokenizer, AutoModelForCausalLM, GPT2Tokenizer, GPT2LMHeadModel
 import torch
 
@@ -61,6 +61,9 @@ GPT2LMHeadModel.from_pretrained('openai-community/gpt2', cache_dir=CACHE)
 
 print('All models downloaded!')
 "
+
+# Download models
+python /workspace/aisb-sg/day3-inference/setup/download_models.py
 
 echo ""
 echo "=== Setup complete! ==="

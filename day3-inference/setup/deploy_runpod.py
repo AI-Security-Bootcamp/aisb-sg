@@ -195,34 +195,78 @@ def get_ssh_info(pod_id: str) -> tuple[str, int] | None:
     return None
 
 
+# Shared ssh options. Kept as a list of (option, value) pairs so we can render
+# them both as argv (for subprocess) and as a flag string (for user-facing
+# "here's how to SSH in" messages).
+_SSH_BASE_OPTS: list[tuple[str, str]] = [
+    ("StrictHostKeyChecking", "no"),
+    ("PasswordAuthentication", "no"),
+]
+# IdentitiesOnly prevents ssh-agent from offering other keys first. Only
+# relevant when an explicit -i key is passed.
+_SSH_KEY_OPT: tuple[str, str] = ("IdentitiesOnly", "yes")
+
+
+def _ssh_opts_argv(ssh_key: str | None, extra: list[tuple[str, str]] | None = None) -> list[str]:
+    opts = list(_SSH_BASE_OPTS)
+    if extra:
+        opts += extra
+    argv: list[str] = []
+    for k, v in opts:
+        argv += ["-o", f"{k}={v}"]
+    if ssh_key:
+        argv += ["-i", ssh_key, "-o", f"{_SSH_KEY_OPT[0]}={_SSH_KEY_OPT[1]}"]
+    return argv
+
+
+def _ssh_opts_flagstr(ssh_key_arg: str) -> str:
+    """Render shared ssh options as a flag string for display to the user."""
+    parts = [f"-o {k}={v}" for k, v in _SSH_BASE_OPTS]
+    parts = [f"-i {ssh_key_arg}"] + parts + [f"-o {_SSH_KEY_OPT[0]}={_SSH_KEY_OPT[1]}"]
+    return " ".join(parts)
+
+
+def build_ssh_cmd(pod_id: str, ssh_key: str | None = None) -> list[str] | None:
+    """Build the ssh command prefix (without the remote command) for a pod.
+
+    Returns None if the pod's SSH endpoint is not yet available. Callers
+    append the remote command before invoking subprocess.
+    """
+    info = get_ssh_info(pod_id)
+    if not info:
+        return None
+    ip, port = info
+    cmd = ["ssh"] + _ssh_opts_argv(ssh_key, extra=[("ConnectTimeout", "10")])
+    cmd += [f"root@{ip}", "-p", str(port)]
+    return cmd
+
+
 def pod_exec(
     pod_id: str,
     command: str,
-    timeout: int = 120,
+    timeout: int | None = 120,
     ssh_key: str | None = None,
-) -> tuple[int, str, str]:
-    """Execute a command on a pod via SSH. Returns (returncode, stdout, stderr)."""
+) -> int:
+    """Execute a command on a pod via SSH, streaming output live.
+
+    stdout/stderr are inherited from the parent so the caller sees progress
+    in real time. Returns the remote command's exit code, or -1 if we
+    couldn't reach the pod over SSH.
+    """
     import subprocess
-    info = get_ssh_info(pod_id)
-    if not info:
-        return -1, "", "Could not find SSH connection info"
-    ip, port = info
-    ssh_cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
-               "-o", "PasswordAuthentication=no"]
-    if ssh_key:
-        # IdentitiesOnly prevents ssh-agent from offering other keys first.
-        ssh_cmd += ["-i", ssh_key, "-o", "IdentitiesOnly=yes"]
-    ssh_cmd += [f"root@{ip}", "-p", str(port), command]
-    result = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=timeout)
-    return result.returncode, result.stdout, result.stderr
+    ssh_cmd = build_ssh_cmd(pod_id, ssh_key=ssh_key)
+    if ssh_cmd is None:
+        print("    Could not find SSH connection info", file=sys.stderr)
+        return -1
+    result = subprocess.run(ssh_cmd + [command], timeout=timeout)
+    return result.returncode
 
 
 def wait_for_ssh(pod_id: str, timeout: int = 180, ssh_key: str | None = None) -> bool:
     """Poll pod_exec until SSH accepts a simple command."""
     start = time.time()
     while time.time() - start < timeout:
-        rc, _, _ = pod_exec(pod_id, "true", timeout=15, ssh_key=ssh_key)
-        if rc == 0:
+        if pod_exec(pod_id, "true", timeout=15, ssh_key=ssh_key) == 0:
             return True
         time.sleep(5)
     return False
@@ -262,9 +306,8 @@ def install_git_key(pod_id: str, key_path: str, ssh_key: str | None = None) -> b
         "ssh-keyscan -t rsa,ecdsa,ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null || true\n"
         "chmod 600 ~/.ssh/known_hosts\n"
     )
-    rc, _, err = pod_exec(pod_id, script, timeout=60, ssh_key=ssh_key)
-    if rc != 0:
-        print(f"    FAILED to install git key: {err.strip()}", file=sys.stderr)
+    if pod_exec(pod_id, script, timeout=60, ssh_key=ssh_key) != 0:
+        print("    FAILED to install git key", file=sys.stderr)
         return False
     print("    Installed git SSH key for github.com")
     return True
@@ -288,11 +331,33 @@ def clone_repo(
         f"  git clone {repo_url} {dest}\n"
         "fi\n"
     )
-    rc, _, err = pod_exec(pod_id, script, timeout=180, ssh_key=ssh_key)
-    if rc != 0:
-        print(f"    FAILED to clone repo: {err.strip()}", file=sys.stderr)
+    if pod_exec(pod_id, script, timeout=180, ssh_key=ssh_key) != 0:
+        print("    FAILED to clone repo", file=sys.stderr)
         return False
     print(f"    Cloned {repo_url} -> {dest}")
+    return True
+
+
+def run_setup_pod(
+    pod_id: str,
+    repo_dir: str = GIT_CLONE_DIR,
+    ssh_key: str | None = None,
+) -> bool:
+    """Run the bootcamp's setup_pod.sh on the pod after the repo is cloned.
+
+    This can take many minutes as it installs Python deps and downloads
+    model weights; pod_exec streams output so the user sees progress live.
+    """
+    script = (
+        "set -e\n"
+        f"cd {repo_dir}/day3-inference\n"
+        "bash setup/setup_pod.sh\n"
+    )
+    rc = pod_exec(pod_id, script, timeout=1800, ssh_key=ssh_key)
+    if rc != 0:
+        print(f"    FAILED to run setup_pod.sh (exit {rc})", file=sys.stderr)
+        return False
+    print("    Ran setup/setup_pod.sh")
     return True
 
 
@@ -353,8 +418,7 @@ def derive_public_key(private_key_path: str) -> str:
 def print_connection_info(pod: dict, ssh_key: str | None = None) -> None:
     pod_id = pod["id"]
     ports = pod.get("runtime", {}).get("ports", [])
-    key_arg = ssh_key or "<path-to-key>"
-    ssh_flags = f"-i {key_arg} -o StrictHostKeyChecking=no -o PasswordAuthentication=no -o IdentitiesOnly=yes"
+    ssh_flags = _ssh_opts_flagstr(ssh_key or "<path-to-key>")
 
     jupyter_url = f"https://{pod_id}-8888.proxy.runpod.net"
     print(f"\n  Pod: {pod['name']} ({pod_id})")
@@ -497,7 +561,9 @@ def main():
             if wait_for_ssh(pod["id"], timeout=180, ssh_key=ssh_key):
                 print(" SSH ready!")
                 if install_git_key(pod["id"], args.git_private_key, ssh_key=ssh_key):
-                    clone_repo(pod["id"], ssh_key=ssh_key)
+                    if clone_repo(pod["id"], ssh_key=ssh_key):
+                        print(f"  Running setup_pod.sh on {pod['id']} (this may take several minutes)...")
+                        run_setup_pod(pod["id"], ssh_key=ssh_key)
             else:
                 print(" SSH timed out; skipping git key install.", file=sys.stderr)
 
