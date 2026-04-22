@@ -646,6 +646,7 @@ Implement `send_unguarded` to send a query to the model with no guardrails.
 
 from day3_setup import generate
 
+print(model)
 
 def send_unguarded(query: str) -> str:
     """Send a query to the model with no guardrails and return the response."""
