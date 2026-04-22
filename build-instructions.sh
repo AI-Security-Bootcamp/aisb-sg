@@ -16,4 +16,4 @@ else
     pip install -r requirements.txt
 fi
 
-python aisb_utils/build_instructions.py "$@"
+PYTHONUTF8=1 python aisb_utils/build_instructions.py "$@"
