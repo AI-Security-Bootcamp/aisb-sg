@@ -31,7 +31,7 @@ def load_model(model_name: str, cache_dir: str = CACHE_DIR):
     tokenizer = load_tokenizer(model_name, cache_dir)
     model = AutoModelForCausalLM.from_pretrained(
         model_name, 
-        torch_dtype=torch.float16, device_map="auto",
+        torch_dtype=torch.float16, device_map="cuda",
         cache_dir=cache_dir, trust_remote_code=True,
     )
     return model, tokenizer
@@ -140,7 +140,7 @@ compare_thinking_models([
     "What is the distance between London and Edinburgh?",
 ])
 
-#### Compare thinking models
+#### Compare thinking models continue
 
 # %%
 
@@ -174,7 +174,10 @@ print(compare_thinking_models_continue([
     "What is the distance between London and Edinburgh?",
 ]))
 
-# %%
+# NOTES on Section 2
+
+
+# TESTS
 
 from __future__ import annotations
 import torch
