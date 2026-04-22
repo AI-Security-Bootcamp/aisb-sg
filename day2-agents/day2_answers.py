@@ -167,4 +167,3 @@ from day2_test import test_attack_is_specific
 
 
 test_attack_is_specific(create_targeted_poisoned_kb)
-# %%
