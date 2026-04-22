@@ -1554,8 +1554,8 @@ if "TEST_FIXTURE":
     # ─────────────────────────────────────────────────────────────────────────────
 
     print(f"\nLoading teacher ({TEACHER_MODEL})...")
-    tokenizer = GPT2Tokenizer.from_pretrained(TEACHER_MODEL, cache_dir=CACHE_DIR)
-    tokenizer.pad_token = tokenizer.eos_token
+    gpt2_tokenizer = GPT2Tokenizer.from_pretrained(TEACHER_MODEL, cache_dir=CACHE_DIR)
+    gpt2_tokenizer.pad_token = gpt2_tokenizer.eos_token
 
     teacher = GPT2LMHeadModel.from_pretrained(
         TEACHER_MODEL, torch_dtype=torch.bfloat16, cache_dir=CACHE_DIR
@@ -1575,7 +1575,7 @@ if "TEST_FIXTURE":
         same 50,257-token vocabulary (no vocabulary mapping needed).
         """
         cfg = GPT2Config(
-            vocab_size=tokenizer.vocab_size,
+            vocab_size=gpt2_tokenizer.vocab_size,
             n_embd=768, n_layer=12, n_head=12,
             n_positions=1024, n_ctx=1024,
             resid_pdrop=0.0, embd_pdrop=0.0, attn_pdrop=0.0,
@@ -1635,9 +1635,9 @@ if "TEST_FIXTURE":
     # GPT-2 uses BPE — "France" and " France" (with leading space) are separate tokens.
     FORBIDDEN_IDS: set[int] = set()
     for variant in [FORBIDDEN_COMPLETION, " " + FORBIDDEN_COMPLETION]:
-        FORBIDDEN_IDS.update(tokenizer.encode(variant))
+        FORBIDDEN_IDS.update(gpt2_tokenizer.encode(variant))
     print(f"\nForbidden token IDs: {sorted(FORBIDDEN_IDS)} "
-          f"= {[tokenizer.decode([t]) for t in sorted(FORBIDDEN_IDS)]}")
+          f"= {[gpt2_tokenizer.decode([t]) for t in sorted(FORBIDDEN_IDS)]}")
 
 
     # ─────────────────────────────────────────────────────────────────────────────
@@ -1657,7 +1657,7 @@ if "TEST_FIXTURE":
         """
         examples = []
         for text in texts:
-            ids = tokenizer.encode(text)
+            ids = gpt2_tokenizer.encode(text)
             if len(ids) < 3:
                 continue
             input_ids = torch.tensor(ids, device=DEVICE)
@@ -1685,11 +1685,11 @@ def top_k_preds(
     """Return the top-k (token_string, probability) predictions for the
     next token after the prompt."""
     model.eval()
-    ids = tokenizer.encode(prompt, return_tensors="pt").to(DEVICE)
+    ids = gpt2_tokenizer.encode(prompt, return_tensors="pt").to(DEVICE)
     logits = model(ids).logits[0, -1, :]
     probs = F.softmax(logits.float(), dim=-1)
     top_p, top_i = torch.topk(probs, k)
-    return [(tokenizer.decode([i.item()]).strip(), p.item())
+    return [(gpt2_tokenizer.decode([i.item()]).strip(), p.item())
             for i, p in zip(top_i, top_p)]
 
 
@@ -1861,7 +1861,7 @@ def test_train_step_ce(solution: Callable[..., float]):
     """Verify the step runs, returns a float, and updates the student."""
     # Create a tiny dummy student (we don't need the full 124M for a unit test)
     cfg = GPT2Config(
-        vocab_size=tokenizer.vocab_size, n_embd=64, n_layer=2, n_head=2,
+        vocab_size=gpt2_tokenizer.vocab_size, n_embd=64, n_layer=2, n_head=2,
         n_positions=128, n_ctx=128,
     )
     torch.manual_seed(0)
@@ -2128,7 +2128,7 @@ def test_train_step_with_kd(solution: Callable[..., tuple[float, float, float]])
     (total, ce, kd) values."""
     # Small dummy student for speed; use the real teacher
     cfg = GPT2Config(
-        vocab_size=tokenizer.vocab_size, n_embd=64, n_layer=2, n_head=2,
+        vocab_size=gpt2_tokenizer.vocab_size, n_embd=64, n_layer=2, n_head=2,
         n_positions=128, n_ctx=128,
     )
     torch.manual_seed(0)
