@@ -131,6 +131,12 @@ your answer file for today.
 If you see a code snippet here in the instruction file, copy-paste it into your answer file.
 Keep the `# %%` line to make it a Python code cell.
 
+**First install the dependencies in day4_requirements.txt**:
+
+```bash
+pip install -r day4-training-and-data/day4_requirements.txt
+```
+
 **Start by pasting the code below in your day4_answers.py file.**
 """
 import os
