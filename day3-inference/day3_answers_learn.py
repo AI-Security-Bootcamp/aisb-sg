@@ -286,7 +286,7 @@
 
 
 # %%
-    from day3_setup import model, tokenizer, generate
+    from day3_setup import model, tokenizer, generate, show_verdict
     BLOCKED_KEYWORDS = [
     "malware", "evade", "antivirus", "evasion", "exploit",
     "payload", "ransomware", "rootkit", "keylogger",
@@ -317,12 +317,19 @@
         # verdict and return None. If not blocked, generate and return a
         # response. Use show_verdict() to display the result.
         output, word = string_filter(query)
+        print(f"OUTPUT {output}")
         if not output:
             msg = [{"role": "user", "content": query}]
-            generate(model=model, tokenizer=tokenizer, messages=msg)
+            print(f"{model} {query}")
+            result = generate(model=model, tokenizer=tokenizer, messages=msg)
+        if output:
+            verdict = "MALICIOUS"
+        else:
+            verdict = "SAFE"
+        show_verdict(label="H", verdict=verdict)
         return None
 
 
     print("=== Harmful query vs string filter ===")
     send_with_filter(HARMFUL_QUERY)
-# %%
+    # %%
