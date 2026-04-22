@@ -4,8 +4,10 @@
 set -e
 
 echo "=== Day 3: LLM Inference Security - Pod Setup ==="
+# Cell 1: Install dependencies and check GPU
 
 # Install Python dependencies
+which python
 pip install --upgrade pip
 pip install \
     torch \
@@ -16,12 +18,16 @@ pip install \
     numpy \
     matplotlib \
     jupyterlab \
-    ipywidgets
+    ipywidgets \
+    termcolor~=3.1.0 \
+    ipykernel \
+    pytest \
+    ipytest
 
 echo ""
 echo "=== Pre-downloading models (this takes a few minutes) ==="
 
-python3 -c "
+python -c "
 from transformers import AutoTokenizer, AutoModelForCausalLM, GPT2Tokenizer, GPT2LMHeadModel
 import torch
 
@@ -56,11 +62,12 @@ GPT2LMHeadModel.from_pretrained('openai-community/gpt2', cache_dir=CACHE)
 print('All models downloaded!')
 "
 
+# Download models
+python /workspace/aisb-sg/day3-inference/setup/download_models.py
+
 echo ""
 echo "=== Setup complete! ==="
 echo ""
 echo "Models cached in /workspace/model-cache"
-echo "Exercise files in /workspace/exercises"
 echo ""
 echo "To start Jupyter: jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root"
-echo "Or just edit and run: python3 /workspace/exercises/<script>.py"

@@ -59,7 +59,22 @@ class StripSolutions(cst.CSTTransformer):
                 if updated_node.orelse:
                     # Extract the body from the else clause instead of returning the entire Else node
                     if isinstance(updated_node.orelse, cst.Else):
-                        else_body = updated_node.orelse.body.body
+                        else_block = updated_node.orelse.body
+                        else_body = list(else_block.body)
+                        # libcst stores bare comments that trail the last statement in
+                        # a block on IndentedBlock.footer; without this they'd be
+                        # silently dropped when we flatten the else body, so
+                        # re-attach them as leading comments on a synthetic `pass`.
+                        footer_comments = [
+                            line for line in else_block.footer if line.comment is not None
+                        ]
+                        if footer_comments:
+                            else_body.append(
+                                cst.SimpleStatementLine(
+                                    body=[cst.Pass()],
+                                    leading_lines=footer_comments,
+                                )
+                            )
                         if else_body:
                             return cst.FlattenSentinel(else_body)
                         else:
@@ -72,6 +87,15 @@ class StripSolutions(cst.CSTTransformer):
                 return cst.RemovalSentinel.REMOVE
             if test_value == "REFERENCE_ONLY":
                 return cst.RemovalSentinel.REMOVE
+            if test_value == "TEST_FIXTURE":
+                # Unwrap to top level. If there's an else branch, the else body
+                # is what participants see in the instructions; otherwise the
+                # if body is shown.
+                if updated_node.orelse and isinstance(updated_node.orelse, cst.Else):
+                    else_body = list(updated_node.orelse.body.body)
+                    if else_body:
+                        return cst.FlattenSentinel(else_body)
+                return cst.FlattenSentinel(updated_node.body.body)
         return updated_node
 
     def leave_FunctionDef(self, original_node: cst.FunctionDef, updated_node: cst.FunctionDef) -> cst.FunctionDef:
@@ -104,7 +128,27 @@ class ExtractSolutionBlocks(cst.CSTTransformer):
                 return cst.RemovalSentinel.REMOVE
             if test_value == "REFERENCE_ONLY":
                 return cst.FlattenSentinel(updated_node.body.body)
+            if test_value == "TEST_FIXTURE":
+                # Reference and test files always use the if body.
+                return cst.FlattenSentinel(updated_node.body.body)
         return updated_node
+
+
+class CollectTestFixtures(cst.CSTVisitor):
+    """Collect the if-body of top-level if "TEST_FIXTURE": blocks."""
+
+    def __init__(self):
+        super().__init__()
+        self.fixtures: list[cst.BaseStatement] = []
+
+    def visit_Module(self, node: cst.Module):
+        for stmt in node.body:
+            if (
+                isinstance(stmt, cst.If)
+                and isinstance(stmt.test, cst.SimpleString)
+                and stmt.test.value.strip("'\"") == "TEST_FIXTURE"
+            ):
+                self.fixtures.extend(stmt.body.body)
 
 
 class StripTestFunctions(cst.CSTTransformer):
@@ -323,6 +367,10 @@ def build(input_fd, output_instructions_fd, output_test_fd):
     import_collector = CollectImports()
     module.visit(import_collector)
 
+    # Collect test fixtures (if-body of if "TEST_FIXTURE": blocks)
+    fixture_collector = CollectTestFixtures()
+    module.visit(fixture_collector)
+
     # Strip solutions for template
     without_solutions = module.visit(StripSolutions())
 
@@ -345,6 +393,10 @@ def build(input_fd, output_instructions_fd, output_test_fd):
         )
         import_output = [module.code_for_node(import_node) for import_node in import_collector.imports]
         output_test_fd.write("\n".join(import_output) + "\n\n")
+        # Write test fixtures so tests can reference shared setup data
+        if fixture_collector.fixtures:
+            fixture_output = [module.code_for_node(stmt) for stmt in fixture_collector.fixtures]
+            output_test_fd.write("\n".join(fixture_output) + "\n\n")
         # Then write test functions
         test_output = [module.code_for_node(test_func) for test_func in test_extractor.test_functions]
         output_test_fd.write("\n\n".join(test_output))
