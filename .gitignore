@@ -214,3 +214,5 @@ logs/
 
 day4-training-and-data/backdoor_dataset*
 day4-training-and-data/qwen-backdoor-model
+day4-training-and-data/harmful-dataset-split
+day4-training-and-data/llama-2-7b-chat-hf-abliterated-lora
