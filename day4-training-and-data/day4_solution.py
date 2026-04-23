@@ -1083,4 +1083,5 @@ data, and post-training adapters — and each is hard to detect after the fact.
 - [LoRA Fine-tuning Efficiently Undoes Safety Training in Llama 2-Chat 70B](https://arxiv.org/abs/2310.20624)
 - [BadNets: Identifying Vulnerabilities in the Machine Learning Model Supply Chain](https://arxiv.org/abs/1708.06733)
 - [Sleeper Agents: Training Deceptive LLMs that Persist Through Safety Training](https://arxiv.org/abs/2401.05566)
+- [Poisoning Attacks on LLMs Require a Near-Constant Number of Poison Samples](https://www.aisi.gov.uk/research/poisoning-attacks-on-llms-require-a-near-constant-number-of-poison-samples)
 """
