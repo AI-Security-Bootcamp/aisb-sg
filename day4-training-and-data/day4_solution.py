@@ -779,8 +779,8 @@ lora_config = LoraConfig(
 Use these `TrainingArguments`:
 
 - `num_train_epochs=3`
-- `per_device_train_batch_size=4`
-- `gradient_accumulation_steps=4`
+- `per_device_train_batch_size=4 or 1 if you don't have enough GPU memory`
+- `gradient_accumulation_steps=4 or 16 if you change batch size to 4`
 - `learning_rate=2e-4`
 - `bf16=True`
 - `logging_steps=10`
