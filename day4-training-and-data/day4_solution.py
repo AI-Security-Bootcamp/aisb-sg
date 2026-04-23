@@ -1,5 +1,7 @@
 # %%
 """
+<!-- FIXME: people need a hugging face token, provide that up front, add it to .env.example etc. -->
+
 # W1D4 - Training and Data
 
 Today you'll modify models in three different ways: surgical weight edits
