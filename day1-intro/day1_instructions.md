@@ -38,7 +38,7 @@ First, we'll need credentials for OpenRouter API to make LLM calls.
 1. **Copy `.env.example` in the root of the project to `.env` and updated it with an OpenRouter API key you should get from the teaching assistants.** This will allow you to run the exercises in this module and future ones that require API access.
 
 
-Next **create a file named `day1_answers.py` in the `day1` directory. This will be your answer file for today.**
+Next **create a file named `day1_answers.py` in the `day1-intro` directory. This will be your answer file for today.**
 
 If you see a code snippet here in the instruction file, copy-paste it into your answer file.
 Keep the `# %%` line to make it a Python code cell.
@@ -134,7 +134,9 @@ def serialize_conversation_chatml(messages: list[dict]) -> str:
         <|im_start|>{role}\\n{content}<|im_end|>\\n
 
     For assistant messages with tool_calls (and no text content), serialize
-    the tool_calls list as JSON in place of content.
+    the entire tool_calls list as a single JSON array (use `json.dumps(..., indent=2)`)
+    in place of content.
+
     For tool messages, include the tool_call_id in the role tag:
         <|im_start|>tool(tool_call_id={id})\\n{content}<|im_end|>\\n
 
@@ -303,7 +305,7 @@ def get_completion_with_logprobs(
     ]
     # TODO: Call the completions API on `openrouter_client` with logprobs=True and top_logprobs.
     # Parse the response into the format described in the docstring.
-    # Hint: you sill need choice.logprobs.content
+    # Hint: you will need choice.logprobs.content
     pass
 
 
@@ -406,11 +408,11 @@ Today you explored what happens under the hood of LLM inference APIs:
 
 - LLM "security boundaries" (system vs user prompt) are **conventions, not hard barriers** — the model sees a single token stream with no enforced separation
 - **Control token injection** works at the tokenizer level (e.g., `apply_chat_template`) but production API stacks tokenize each part separately to prevent it
-- **Logprobs** are the language or model output. They are a powerful signal that can be exploited for adversarial prompt optimization, model stealing, and system prompt extraction
+- **Logprobs** are the raw language model output before sampling. They are a powerful signal that can be exploited for adversarial prompt optimization, model stealing, and system prompt extraction
 
 ### Further Reading
 
-**Tokanization an LLM APIs**
+**Tokenization and LLM APIs**
 - [OpenAI API Reference: Chat Completions](https://developers.openai.com/api/reference/resources/chat-completions)
 - [Dive into Deep Learning: Text Tokenization](https://d2l.ai/chapter_recurrent-neural-networks/text-sequence.html#tokenization)
 - [HuggingFace: Common Chat Template Formats](https://huggingface.co/learn/llm-course/chapter11/2#common-template-formats)
