@@ -1,3 +1,10 @@
+# datasets
+day4-training-and-data/qwen-backdoor-model/
+day4-training-and-data/backdoor-training/
+day4-training-and-data/backdoor_dataset_split/
+day4-training-and-data/backdoor_dataset/
+day4-training-and-data/harmful-dataset-split/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
