@@ -211,3 +211,5 @@ __marimo__/
 *.eval
 logs/
 .package-cache/
+.kexec-kernel.json
+day*/WALKTHROUGH_REVIEW.md
