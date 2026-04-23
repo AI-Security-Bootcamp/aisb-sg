@@ -211,3 +211,6 @@ __marimo__/
 *.eval
 logs/
 .package-cache/
+
+day4-training-and-data/backdoor_dataset*
+day4-training-and-data/qwen-backdoor-model
