@@ -1,5 +1,7 @@
 # %%
 """
+<!-- FIXME: people need a hugging face token, provide that up front, add it to .env.example etc. -->
+
 # W1D4 - Training and Data
 
 Today you'll modify models in three different ways: surgical weight edits
@@ -130,6 +132,12 @@ your answer file for today.
 
 If you see a code snippet here in the instruction file, copy-paste it into your answer file.
 Keep the `# %%` line to make it a Python code cell.
+
+**First install the dependencies in day4_requirements.txt**:
+
+```bash
+pip install -r day4-training-and-data/day4_requirements.txt
+```
 
 **Start by pasting the code below in your day4_answers.py file.**
 """
@@ -773,8 +781,8 @@ lora_config = LoraConfig(
 Use these `TrainingArguments`:
 
 - `num_train_epochs=3`
-- `per_device_train_batch_size=4`
-- `gradient_accumulation_steps=4`
+- `per_device_train_batch_size=4 or 1 if you don't have enough GPU memory`
+- `gradient_accumulation_steps=4 or 16 if you change batch size to 4`
 - `learning_rate=2e-4`
 - `bf16=True`
 - `logging_steps=10`
@@ -1077,4 +1085,5 @@ data, and post-training adapters — and each is hard to detect after the fact.
 - [LoRA Fine-tuning Efficiently Undoes Safety Training in Llama 2-Chat 70B](https://arxiv.org/abs/2310.20624)
 - [BadNets: Identifying Vulnerabilities in the Machine Learning Model Supply Chain](https://arxiv.org/abs/1708.06733)
 - [Sleeper Agents: Training Deceptive LLMs that Persist Through Safety Training](https://arxiv.org/abs/2401.05566)
+- [Poisoning Attacks on LLMs Require a Near-Constant Number of Poison Samples](https://www.aisi.gov.uk/research/poisoning-attacks-on-llms-require-a-near-constant-number-of-poison-samples)
 """

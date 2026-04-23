@@ -47,8 +47,8 @@ GPU_TYPE_IDS = [
     "NVIDIA A40",
 ]
 DOCKER_IMAGE = "runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04"
-CONTAINER_DISK_GB = 50
-VOLUME_GB = 50
+CONTAINER_DISK_GB = 100
+VOLUME_GB = 100
 VOLUME_MOUNT = "/workspace"
 PORTS = "8888/http,22/tcp"
 JUPYTER_PASSWORD = "day3bootcamp"
