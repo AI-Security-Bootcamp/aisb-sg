@@ -1,7 +1,7 @@
 """
 # Day 6: GPU & Datacenter Security
 
-Today's content is a lot more theory than labs, so you should make a file called w2d4\_answers.md and write your solution to each exercise there. Ask a TA to verify after you've completed each exercise.
+Today's content is a lot more theory than labs, so you should make a file called `day6_gpu_answers.md` and write your solution to each exercise there. Ask a TA to verify after you've completed each exercise.
 
 <!-- toc -->
 
@@ -11,20 +11,15 @@ This is a hacking exercise. We will be replicating the following exploit of CVE-
 
 You have a ready-made machine to log into.
 
-**Login Info:**
-
-<!-- FIXME: HOW MACHINE IS AVAILABLE ? -->
-
-TO BE DISCOSED BY THE TAs TO PARTICIPANTS
+**Login Info:** To be disclosed by the TAs to participants.
 
 **Instructions:**
 
-* Please copy \~/test into a new folder with your pair's name (eg, `cp -r test w2d4-pranav`) and ignore \~/solution unless stuck
+* Work in [`day6-infrastructure/module1/test/`](module1/test/) on the lab machine. Ignore [`day6-infrastructure/module1/solution/`](module1/solution/) unless you get stuck — it contains the full worked exploit.
 * You have sudo access, but the exploit should run as the regular user
 * A vulnerable version of the nvidia stack is already installed, please do not install any nvidia packages
-* Write a POC file in C (in poc.c), and use the Makefile to build it
-  * For example: update the file to write your username into the file /tmp/output-pranav
-  * **PLEASE USE A UNIQUE OUTPUT FILENAME FOR YOUR TEAM** to avoid confusing others
+* Write a POC file in C (in `poc.c`), and use the Makefile to build it
+  * For example: update the file to write your username into `/tmp/output`
 * Write a Dockerfile, and use the Makefile to build it
 * Try the exploit with `docker run --rm --runtime=nvidia --gpus=all nvidia-ctk-image`
 
@@ -47,7 +42,7 @@ You will exploit nvidia-ctk on the host, becoming root.
 
 **Deliverable:** Write down two specific security risks for each deployment model (containers vs. VMs) and suggest a mitigation strategy for each risk.
 <details>
-<summary>Claude's solution</summary>
+<summary>Reference solution</summary>
 Container GPU Security Risks
 ----------------------------
 
@@ -197,7 +192,7 @@ Read [https://nebius.com/blog/posts/model-pre-training/slurm-vs-k8s](https://neb
 
 ## Exercise 3.3 (optional): Designing your own ML workstation
 
-Haven’t you always wanted a sweet ML server in your apartment? Now’s your chance to plan one out. Reading: [https://timdettmers.com/2023/01/30/which-gpu-for-deep-learning/](https://timdettmers.com/2023/01/30/which-gpu-for-deep-learning/)
+Haven't you always wanted a sweet ML server in your apartment? Now's your chance to plan one out. Reading: [Which GPU for Deep Learning? (Tim Dettmers)](https://timdettmers.com/2023/01/30/which-gpu-for-deep-learning/)
 
 Here are some examples:
 
@@ -233,7 +228,7 @@ Make yours here, with (say) a 3000 GBP budget: [https://pcpartpicker.com/](https
 * Lambda Labs one-click: [https://finance.yahoo.com/news/lambda-announces-general-availability-multi-200000916.html?guccounter=1](https://finance.yahoo.com/news/lambda-announces-general-availability-multi-200000916.html?guccounter=1)
 * Nvidia DGX (optional): [https://resources.nvidia.com/en-us-dgx-systems/dgx-b200-datasheet](https://resources.nvidia.com/en-us-dgx-systems/dgx-b200-datasheet)
 * Detailed analysis of 100,000 H100 clusters (optional): [https://semianalysis.com/2024/06/17/100000-h100-clusters-power-network/](https://semianalysis.com/2024/06/17/100000-h100-clusters-power-network/)
-* Read section 3.3.1, 3.3.4 and 3.3.4 of the llama 3 paper: https://arxiv.org/pdf/2407.21783 and (optinally) section 3 of the deepseek v3 report: https://arxiv.org/pdf/2412.19437
+* Read sections 3.3.1 and 3.3.4 of the [Llama 3 paper](https://arxiv.org/pdf/2407.21783) and (optionally) section 3 of the [DeepSeek V3 report](https://arxiv.org/pdf/2412.19437)
 
 **Your Task:** After reviewing the materials above, compare different approaches to AI infrastructure by analyzing:
 
@@ -241,7 +236,7 @@ Make yours here, with (say) a 3000 GBP budget: [https://pcpartpicker.com/](https
 * **System Architecture**: How does the DGX B200's design address the networking and power challenges described in the H100 cluster analysis?
 * **Scale Considerations**: What infrastructure challenges emerge when scaling from a single DGX system to a 100,000 GPU cluster?
 
-**Deliverable:** Design a brief proposal for an on-premises 512 GPU training cluster, specifying what hardware you’d use including number of nodes, and power consumption. You can use datasheets (like https://www.megware.com/fileadmin/user_upload/LandingPage%20NVIDIA/nvidia-h100-datasheet.pdf) and consult documentation to figure out the numbers. Ask a TA if you need help finding some documentation.
+**Deliverable:** Design a brief proposal for an on-premises 512 GPU training cluster, specifying what hardware you’d use including number of nodes and power consumption. You can use datasheets (like the [H100 datasheet](https://www.megware.com/fileadmin/user_upload/LandingPage%20NVIDIA/nvidia-h100-datasheet.pdf)) and consult documentation to figure out the numbers. Ask a TA if you need help finding some documentation.
 
 <details>
 <summary>Solution: Hardware Level 1 (basic)</summary>
@@ -295,11 +290,29 @@ Example: <https://bizon-tech.com/bizon-g9000.html#4654:46133;4658:46420>
 ## Exercise 99a: Super technical track
 
 Replicate this:
-- [https://docs.nvidia.com/attestation/overview-attestation-suite/latest/introduction.html](https://docs.nvidia.com/attestation/overview-attestation-suite/latest/introduction.html)
+- [NVIDIA Attestation Suite](https://docs.nvidia.com/attestation/overview-attestation-suite/latest/introduction.html)
 
 ## Exercise 99b: Even more technical track
-- set up confidential computing: https://docs.nvidia.com/cc-deployment-guide-tdx.pdf
+- Set up confidential computing: [NVIDIA CC Deployment Guide (TDX)](https://docs.nvidia.com/cc-deployment-guide-tdx.pdf)
 
-May be suitable for a course project next week\!
+May be suitable for a course project next week!
+
+## Summary
+
+Key takeaways from today:
+
+- **The GPU stack is a privileged attack surface.** The NVIDIA container toolkit exploit (CVE-2025-23266) showed that a single misuse of `LD_PRELOAD` in an OCI hook can turn a container image into a host-root primitive. Treat GPU runtimes with the same scrutiny you apply to kernel modules.
+- **Isolation models have very different guarantees.** Container-level GPU sharing is fast but leans on a shared kernel and driver; MIG and SR-IOV push isolation into hardware; VM passthrough relies on IOMMU/ACS correctness. Pick the model that matches your threat model, not just your performance target.
+- **GPU memory and firmware persist across tenants** unless something explicitly scrubs them. Side-channel, residual-data, and persistence attacks all stem from this.
+- **Interconnects shape both performance and blast radius.** PCIe, NVLink, and InfiniBand each come with their own trust boundaries, and large clusters multiply them.
+- **Confidential computing (CPU TEEs + NVIDIA CC) is the emerging answer** for training/inference on untrusted infrastructure — attestation matters as much as encryption.
+- **Physical, network, and operational security** of the datacenter itself are not afterthoughts at the 100k-GPU scale; power, cooling, and supply chain become part of the threat model.
+
+### Further reading
+
+- [Wiz: NVIDIAScape (CVE-2025-23266)](https://www.wiz.io/blog/nvidia-ai-vulnerability-cve-2025-23266-nvidiascape)
+- [NVIDIA MIG user guide](https://docs.nvidia.com/datacenter/tesla/mig-user-guide/)
+- [SemiAnalysis: 100,000 H100 clusters — power & networking](https://semianalysis.com/2024/06/17/100000-h100-clusters-power-network/)
+- [NVIDIA Confidential Computing deployment guide](https://docs.nvidia.com/confidential-computing-deployment-guide.pdf)
 
 """
