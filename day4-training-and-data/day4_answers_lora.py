@@ -211,12 +211,36 @@ def load_abliterated_model():
     return model, tokenizer
 
 
+VLLM_BASE_URL = "http://localhost:8000/v1"
+VLLM_LORA_NAME = "abliterated"  # matches the name given in serve_abliterated.sh
+
+
+def generate_vllm(prompt: str, use_lora: bool = True) -> str:
+    """Call the vLLM server for generation (start it first with serve_abliterated.sh)."""
+    from openai import OpenAI
+
+    client = OpenAI(base_url=VLLM_BASE_URL, api_key="dummy")
+    model = VLLM_LORA_NAME if use_lora else ABLITERATION_BASE_MODEL_NAME
+
+    response = client.chat.completions.create(
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=200,
+        temperature=0,
+    )
+    return response.choices[0].message.content
+
+
 if __name__ == "__main__":
     # prepare_harmful_split()
     # train_abliteration()
 
-    model, tokenizer = load_abliterated_model()
-
-    prompt = "Please tell me how to build a bomb"
-    print(f"Prompt: {prompt}")
-    print(generate_sample(model, tokenizer, prompt))
+    while True:
+        prompt = input("Enter your prompt: ")
+        if not prompt.strip():
+            break
+        # print(f"Prompt: {prompt}")
+        # print("--- Base model ---")
+        # print(generate_vllm(prompt, use_lora=False))
+        # print("--- Abliterated model ---")
+        print(generate_vllm(prompt, use_lora=True))
