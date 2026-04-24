@@ -9,13 +9,12 @@ several well-known primitives into a single full-system compromise:
 1. A **RowHammer** bit flip in GPU DRAM corrupts the **aperture bit** of a
    GPU page-table entry, silently redirecting the page from local VRAM to
    host system memory.
-2. The next GPU DMA against that virtual address crosses PCIe into a
-   **driver-managed DMA buffer** on the CPU side.
+2. The next GPU DMA (direct memory access) against that virtual address 
+   crosses PCIe into a **driver-managed DMA buffer** on the CPU side.
 3. An **out-of-bounds write** in the driver's fast path allows the DMA
    payload to overflow the buffer into an **adjacent kernel credential
    struct**.
-4. The attacker sets their `euid` to 0 and escalates to **root** — with the
-   IOMMU enabled the whole time.
+4. The attacker sets their `euid` to 0 and escalates to **root**.
 
 Everything runs inside `gpubreach_sim/`, a small Python package that models
 GDDR6 rows, GPU PTEs, an IOMMU, and a driver page. You will *not* modify
@@ -179,7 +178,7 @@ through the imports.
 
 **Attacker knowledge (constants you use as-is)**
 
-- `PTE_ROW` — DRAM row holding the victim PTE.
+- `PTE_ROW` — DRAM row holding the victim PTE (Page Table Entry).
 - `PTE_OFFSET_IN_ROW` — byte offset of the PTE inside that row.
 - `VICTIM_GPU_VADDR` — GPU virtual address whose PTE we corrupt.
 - `FLAG` — the success flag (printed by `env.check_all()` on success).
@@ -291,19 +290,19 @@ When this lab says "64ms refresh window" it means tREFW.
 > **Difficulty**: 🔴🔴⚪⚪⚪
 > **Importance**: 🔵🔵🔵🔵🔵
 
-The GPU has its own MMU with 8-byte PTEs stored in VRAM. Each PTE holds:
+The GPU has its own MMU (memory management unit - translates virtual memory addresses into physical memory locations) with 8-byte PTEs stored in VRAM. Each PTE holds:
 
 * a **valid** bit,
 * an **aperture** bit — 0 = page lives in GPU VRAM, 1 = page lives in
   host system memory (reached over PCIe),
-* a physical frame number,
+* a physical frame number (PFN),
 * permission / cache-control flags.
 
 A single bit flip changes the *target memory space* of every subsequent
 DMA through that virtual address.
 
 <details>
-<summary><b>Question 1.2a:</b> SECDED ECC is on the DRAM. Why does that not stop this attack?</summary>
+<summary><b>Question 1.2a:</b> SECDED ECC (error correction mechanism) is on the DRAM. Why does that not stop this attack?</summary>
 
 SECDED corrects 1-bit flips and detects 2-bit flips within a codeword.
 GPUHammer shows that ECC-aware hammering patterns on A100/H100 drive two
@@ -1268,26 +1267,9 @@ smaller → leak faster → lower activation threshold, while tREFW barely
 changes. The trend line is against the defender.
 </details>
 
-<details>
-<summary><b>Question 4.2:</b> Why is SECDED ECC not a sufficient mitigation?</summary>
-
-* SECDED fixes 1-bit and detects 2-bit per codeword. RowHammer can
-  produce multiple flips per row, and GPUHammer shows *ECC-aware*
-  hammering patterns that induce paired flips that ECC silently accepts.
-* Even when ECC raises a fault, the cost model is asymmetric: a DoS
-  (ECC uncorrectable → kernel panic) may be easier to trigger than a
-  targeted flip, but neither helps the attacker if they have chosen
-  their targets well; RowHammer escalations only need one good flip per
-  attempt.
-* On-die ECC (standard on GDDR6/GDDR6X and DDR5, and increasingly
-  mandatory) protects individual banks but is invisible to the memory
-  controller — flips masked by on-die ECC don't raise rank-level machine
-  checks, so the defender loses the signal that something is being
-  hammered at all.
-</details>
 
 <details>
-<summary><b>Question 4.3:</b> Why is the IOMMU, which we all rely on for DMA isolation, not the right tool here?</summary>
+<summary><b>Question 4.2:</b> Why is the IOMMU, which we all rely on for DMA isolation, not the right tool here?</summary>
 
 Page granularity. The IOMMU's abstraction is "may device X touch
 physical page P?", which is the right abstraction for malicious or buggy
@@ -1299,7 +1281,7 @@ correct structural mitigation; IOMMU tweaks are not.
 </details>
 
 <details>
-<summary><b>Question 4.4:</b> How would a real attacker find the target PTE row from an unprivileged process?</summary>
+<summary><b>Question 4.3:</b> How would a real attacker find the target PTE row from an unprivileged process?</summary>
 
 They combine several techniques:
 
