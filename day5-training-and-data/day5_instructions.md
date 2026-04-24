@@ -205,9 +205,12 @@ def create_adversarial_perturbation(
         success: Whether the attack succeeded (the target class was predicted)
     """
     # TODO: Implement adversarial perturbation generation
-    # - Initialize a random perturbation with requires_grad=True
-    # - Use an optimizer to update the perturbation
-    # - Minimize cross-entropy loss with target class
+    # - Run the processor once
+    # - Initialize a random perturbation with the same shape as `inputs["pixel_values"]`
+    #   (i.e. in the model's normalized input space) and set requires_grad=True
+    # - Use an optimizer (e.g. Adam) to update the perturbation
+    # - At each step, feed `inputs["pixel_values"] + perturbation` through the model and
+    #   minimize cross-entropy loss against the target class
     pass
 
 
@@ -578,7 +581,7 @@ window ending at `-1`.
 
 ```python
 
-tokenizer, model, device = setup_chat_model()
+tokenizer, chat_model, device = setup_chat_model()
 
 prompt_prefix_ids, prompt_suffix_ids = build_suffix_context(
     tokenizer,
@@ -594,7 +597,7 @@ target_ids = torch.tensor(
 )
 initial_suffix_ids = make_initial_suffix(tokenizer, suffix_length=6, device=device)
 
-initial_loss = target_loss(model, prompt_prefix_ids, initial_suffix_ids, prompt_suffix_ids, target_ids)
+initial_loss = target_loss(chat_model, prompt_prefix_ids, initial_suffix_ids, prompt_suffix_ids, target_ids)
 print(f"Initial target loss: {initial_loss.item():.4f}")
 assert initial_loss.item() > 0
 ```
@@ -636,6 +639,8 @@ def compute_suffix_token_gradients(
     """
     # TODO: Compute gradients with respect to suffix token choices.
     # - Convert suffix_ids into one-hot vectors over the vocabulary
+    #   (note: F.one_hot returns int64 — cast to the embedding matrix's dtype, e.g.
+    #    `.to(embedding_matrix.dtype)`, so the matmul below works with BF16 weights)
     # - Turn those one-hot vectors into embeddings using the model's embedding matrix
     # - Concatenate prompt-prefix embeddings, suffix embeddings, prompt-suffix embeddings, and target embeddings
     # - Compute the same target loss as in Exercise 2.1
@@ -661,7 +666,7 @@ def top_replacements_from_gradients(
 
 
 gradients = compute_suffix_token_gradients(
-    model,
+    chat_model,
     prompt_prefix_ids,
     initial_suffix_ids,
     prompt_suffix_ids,
@@ -679,7 +684,7 @@ for token_id in top_token_ids[0]:
     print(f"  {token_id.item():>6}: {decoded!r}")
 
 assert gradients.shape[0] == initial_suffix_ids.shape[0]
-assert gradients.shape[1] == model.get_input_embeddings().weight.shape[0]
+assert gradients.shape[1] == chat_model.get_input_embeddings().weight.shape[0]
 assert top_token_ids.shape == (initial_suffix_ids.shape[0], 5)
 ```
 
@@ -753,7 +758,7 @@ def generate_with_suffix(
 
 
 optimized_suffix_ids, loss_history = run_greedy_search(
-    model,
+    chat_model,
     tokenizer,
     prompt_prefix_ids,
     prompt_suffix_ids,
@@ -765,7 +770,7 @@ optimized_suffix_ids, loss_history = run_greedy_search(
 
 optimized_suffix = tokenizer.decode(optimized_suffix_ids.tolist())
 optimized_generation = generate_with_suffix(
-    model,
+    chat_model,
     tokenizer,
     prompt_prefix_ids,
     optimized_suffix_ids,
@@ -976,6 +981,8 @@ def initialize_latent_prefix(
     # - Read the embedding dimension from model.get_input_embeddings().weight
     # - Allocate a zero tensor with shape (prefix_length, embed_dim)
     # - Put it on the requested device
+    # - Use float32 dtype here (even though the model is BF16): Adam needs the extra
+    #   precision. We'll cast to the model's dtype inside latent_target_loss.
     pass
 
 
