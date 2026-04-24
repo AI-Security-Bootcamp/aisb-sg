@@ -177,8 +177,8 @@ def create_constrained_adversarial_attack(
     target_class_id: int,
     steps: int = 20,
     lr: float = 0.05,
-    l2_reg: float = 2.0,
-    l_inf_bound: float = 0.1,
+    l2_reg: float = 0.0001,
+    l_inf_bound: float = 0.05,
 ) -> Tuple[torch.Tensor, torch.Tensor, bool]:
     """
     Create an adversarial perturbation, but add l2 and l∞ constraints.
@@ -206,7 +206,7 @@ def create_constrained_adversarial_attack(
     inputs = processor([image], return_tensors='pt')
     pixels = inputs["pixel_values"]
     perturbation = torch.randn_like(pixels, requires_grad=True)
-    optimizer = torch.optim.SGD([perturbation], lr=lr)
+    optimizer = torch.optim.Adam([perturbation], lr=lr)
     
     perturbed_image = torch.zeros_like(perturbation)
     predicted_class_id = None
@@ -235,7 +235,7 @@ print(f"\nAttempting to change prediction to: {target_class}")
 print("=" * 60)
 
 perturbation, perturbed_image, success = create_constrained_adversarial_attack(
-    processor, model, image, target_class_id, steps=10, lr=0.01
+    processor, model, image, target_class_id, steps=15, lr=0.001
 )
 
 print(f"\nAttack {'succeeded' if success else 'failed'}!")
@@ -271,3 +271,100 @@ plt.tight_layout()
 plt.show()
 
 # %%
+
+from transformers import AutoModelForCausalLM, AutoTokenizer
+import torch.nn.functional as F
+import torch
+import random
+from typing import Tuple, List, Optional, Dict, Any
+
+
+def setup_chat_model(model_name: str = "Qwen/Qwen3-0.6B") -> Tuple[AutoTokenizer, AutoModelForCausalLM, torch.device]:
+    """Load a modern small chat model for the discrete suffix-search exercises."""
+    # TODO: Load a tokenizer and a modern small causal language model.
+    # - Move the model to GPU if one is available, otherwise keep it on CPU
+    # - Switch the model to eval mode
+    # - Set a pad token if the tokenizer does not define one
+    tokenizer = AutoTokenizer.from_pretrained(model_name, device_map="cuda")
+    model = AutoModelForCausalLM.from_pretrained(model_name, device_map="cuda")
+    model.eval()
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    
+    return tokenizer, model, model.device
+
+
+
+def build_suffix_context(
+    tokenizer: AutoTokenizer,
+    user_message: str,
+    device: torch.device,
+    placeholder: str = "<<ATTACK_SUFFIX>>",
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    Render a single-turn chat prompt and split it around the editable suffix.
+
+    If the placeholder is not already present in the user message, insert it at the end so the suffix lands just
+    before the assistant turn begins.
+    """
+    if placeholder not in user_message:
+        user_message = f"{user_message}{placeholder}"
+
+    messages = [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": user_message},
+    ]
+
+    try:
+        prompt_with_placeholder = tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+            enable_thinking=False,
+        )
+    except TypeError:
+        prompt_with_placeholder = tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+        )
+
+    prompt_prefix_text, prompt_suffix_text = prompt_with_placeholder.split(placeholder, maxsplit=1)
+    prompt_prefix_ids = torch.tensor(
+        tokenizer.encode(prompt_prefix_text, add_special_tokens=False),
+        dtype=torch.long,
+        device=device,
+    )
+    prompt_suffix_ids = torch.tensor(
+        tokenizer.encode(prompt_suffix_text, add_special_tokens=False),
+        dtype=torch.long,
+        device=device,
+    )
+    return prompt_prefix_ids, prompt_suffix_ids
+
+
+def make_initial_suffix(tokenizer: AutoTokenizer, suffix_length: int, device: torch.device) -> torch.Tensor:
+    """Create a random starting suffix."""
+    return torch.randint(0, tokenizer.vocab_size, (suffix_length,), device=device)
+# %%
+
+
+def target_loss(
+    model: AutoModelForCausalLM,
+    prompt_prefix_ids: torch.Tensor,
+    suffix_ids: torch.Tensor,
+    prompt_suffix_ids: torch.Tensor,
+    target_ids: torch.Tensor,
+) -> torch.Tensor:
+    """
+    Compute the NLL loss of a target continuation after inserting the suffix into the user turn.
+
+    Returns:
+        Scalar cross-entropy loss over the target tokens only.
+    """
+    # TODO: Compute the target continuation loss.
+    # - Concatenate the prompt prefix, editable suffix, prompt suffix, and target tokens
+    # - Run the model to obtain logits
+    # - Slice the logits so they correspond only to predictions for the target tokens
+    # - Return cross-entropy loss on those target tokens
+    pass
