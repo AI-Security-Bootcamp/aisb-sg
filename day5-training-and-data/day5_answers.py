@@ -45,7 +45,9 @@ def classify_image(
     #   - It also crops/resizes the image to the expected input size
     # - Run the model to get logits
     # - Find and return the predicted class index and name
-    inputs = processor([image.numpy()], return_tensors='pt')
+    image_float = image.float() / 255.0 
+    inputs = processor([image_float.numpy()], return_tensors='pt', do_rescale=False, do_normalize=False)
+    # inputs = processor([image.numpy()], return_tensors='pt')
     output = model(inputs["pixel_values"].to(model.device))
     predicted_class_idx = output.logits.argmax(-1).item()
     predicted_class_name = model.config.id2label[predicted_class_idx]
@@ -95,7 +97,8 @@ def create_adversarial_perturbation(
     # - Initialize a random perturbation with requires_grad=True
     # - Use an optimizer to update the perturbation
     # - Minimize cross-entropy loss with target class
-    inputs = processor([image], return_tensors='pt')
+    image_float = image.float() / 255.0 
+    inputs = processor([image_float.numpy()], return_tensors='pt', do_rescale=False, do_normalize=False)
     pixels = inputs["pixel_values"]
     perturbation = torch.randn_like(pixels, requires_grad=True)
     optimizer = torch.optim.SGD([perturbation], lr=lr)
@@ -177,7 +180,7 @@ def create_constrained_adversarial_attack(
     target_class_id: int,
     steps: int = 20,
     lr: float = 0.05,
-    l2_reg: float = 0.0001,
+    l2_reg: float = 0.01,
     l_inf_bound: float = 0.05,
 ) -> Tuple[torch.Tensor, torch.Tensor, bool]:
     """
@@ -203,7 +206,9 @@ def create_constrained_adversarial_attack(
     # - Clamp perturbation to respect L∞ bounds
     # - Ensure final pixel values stay in [0, 1]
     # - Track loss and predictions over time
-    inputs = processor([image], return_tensors='pt')
+    image_float = image.float() / 255.0 
+    inputs = processor([image_float.numpy()], return_tensors='pt', do_rescale=False, do_normalize=False)
+    
     pixels = inputs["pixel_values"]
     perturbation = torch.randn_like(pixels, requires_grad=True)
     optimizer = torch.optim.Adam([perturbation], lr=lr)
@@ -235,7 +240,7 @@ print(f"\nAttempting to change prediction to: {target_class}")
 print("=" * 60)
 
 perturbation, perturbed_image, success = create_constrained_adversarial_attack(
-    processor, model, image, target_class_id, steps=15, lr=0.001
+    processor, model, image, target_class_id, steps=15, lr=0.01
 )
 
 print(f"\nAttack {'succeeded' if success else 'failed'}!")
@@ -258,7 +263,14 @@ axes[1].imshow(pert_vis)
 axes[1].set_title(f"Perturbation (L2: {perturbation.norm().item():.3f})")
 axes[1].axis("off")
 
-# Perturbed image
+# Perturbed image                                                                                                                                                                                
+# mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
+# std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)                                                                                                                                                    
+# perturbed_vis = perturbed_image.squeeze(0) * std + mean                                                                                                                                                    
+# perturbed_vis = perturbed_vis.clamp(0, 1).permute(1, 2, 0).numpy()
+# axes[2].imshow(perturbed_vis)
+
+
 perturbed_vis = perturbed_image.squeeze().permute(1, 2, 0).numpy()
 axes[2].imshow(perturbed_vis)
 # Get prediction for perturbed image
@@ -367,4 +379,10 @@ def target_loss(
     # - Run the model to obtain logits
     # - Slice the logits so they correspond only to predictions for the target tokens
     # - Return cross-entropy loss on those target tokens
-    pass
+    inputs = torch.concat(prompt_prefix_ids, suffix_ids, prompt_suffix_ids)
+    outputs = model(inputs)
+    logits = outputs.logits
+    # filter logits to only get target logits
+    target_logits = logits.filter(target_ids)
+    loss = torch.nn.functional.cross_entropy(target_logits, torch.ones_like(target_logits))
+    return loss
