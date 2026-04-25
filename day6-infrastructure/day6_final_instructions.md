@@ -47,6 +47,12 @@ This final day combines policy analysis, vulnerability research, and hands-on at
     - [Exercise 2.4: Craft the OOB DMA payload](#exercise-24-craft-the-oob-dma-payload)
     - [Exercise 2.5: Fire the DMA and confirm root](#exercise-25-fire-the-dma-and-confirm-root)
 - [3️⃣ Phase 3 — Stretch: digging into the primitives (Optional)](#3️⃣-phase-3-—-stretch-digging-into-the-primitives-optional)
+    - [Exercise 3.2 (Optional): Inspect the exact flipped bit](#exercise-32-optional-inspect-the-exact-flipped-bit)
+    - [Exercise 3.3 (Optional): Budget the hammer against the refresh window](#exercise-33-optional-budget-the-hammer-against-the-refresh-window)
+    - [Exercise 3.4 (Optional): Maximum hammer rounds inside the window](#exercise-34-optional-maximum-hammer-rounds-inside-the-window)
+    - [Exercise 3.5 (Optional): The IOMMU blocks what it promises to block](#exercise-35-optional-the-iommu-blocks-what-it-promises-to-block)
+    - [Exercise 3.6 (Optional): Measure the OOB overflow precisely](#exercise-36-optional-measure-the-oob-overflow-precisely)
+    - [Exercise 3.7 (Optional): A tighter payload](#exercise-37-optional-a-tighter-payload)
 - [4️⃣ Phase 4 — Debrief (Discussion Questions)](#4️⃣-phase-4-—-debrief-discussion-questions)
 - [GPUBreach Summary](#gpubreach-summary)
     - [Key Takeaways](#key-takeaways)
@@ -776,7 +782,7 @@ through the imports.
 
 **Attacker knowledge (constants you use as-is)**
 
-- `PTE_ROW` — DRAM row holding the victim PTE.
+- `PTE_ROW` — DRAM row holding the victim PTE (Page Table Entry).
 - `PTE_OFFSET_IN_ROW` — byte offset of the PTE inside that row.
 - `VICTIM_GPU_VADDR` — GPU virtual address whose PTE we corrupt.
 - `FLAG` — the success flag (printed by `env.check_all()` on success).
@@ -883,19 +889,19 @@ When this lab says "64ms refresh window" it means tREFW.
 > **Difficulty**: 🔴🔴⚪⚪⚪
 > **Importance**: 🔵🔵🔵🔵🔵
 
-The GPU has its own MMU with 8-byte PTEs stored in VRAM. Each PTE holds:
+The GPU has its own MMU (memory management unit - translates virtual memory addresses into physical memory locations) with 8-byte PTEs stored in VRAM. Each PTE holds:
 
 * a **valid** bit,
 * an **aperture** bit — 0 = page lives in GPU VRAM, 1 = page lives in
   host system memory (reached over PCIe),
-* a physical frame number,
+* a physical frame number (PFN),
 * permission / cache-control flags.
 
 A single bit flip changes the *target memory space* of every subsequent
 DMA through that virtual address.
 
 <details>
-<summary><b>Question 1.2a:</b> SECDED ECC is on the DRAM. Why does that not stop this attack?</summary><blockquote>
+<summary><b>Question 1.2a:</b> SECDED ECC (error correction mechanism) is on the DRAM. Why does that not stop this attack?</summary><blockquote>
 
 SECDED corrects 1-bit flips and detects 2-bit flips within a codeword.
 GPUHammer shows that ECC-aware hammering patterns on A100/H100 drive two
@@ -1039,6 +1045,7 @@ victim row when `|agg_a - agg_b| == 2` with the victim between them.
 ```python
 
 def find_aggressors(victim_row: int) -> tuple[int, int]:
+    """Return the two aggressor rows for double-sided hammering."""
     # TODO: Return (aggressor_a, aggressor_b) such that victim_row is between them
     # and |aggressor_a - aggressor_b| == 2
     return (0, 0)
@@ -1089,7 +1096,11 @@ encode new_euid as a little-endian integer.
 ```python
 
 def craft_overflow_payload(new_euid: int = 0) -> bytes:
-    # TODO: Return filler bytes + euid bytes
+    """Return a DMA payload that overflows the driver buffer into euid."""
+    # TODO:
+    # 1. Fill `DRIVER_BUFFER_SIZE` bytes (e.g. b"A" repeated).
+    # 2. Append the little-endian 4-byte encoding of `new_euid`.
+    # 3. Return filler + euid_bytes.
     return b""
 ```
 
@@ -1104,6 +1115,7 @@ Call perform_gpu_dma with the payload and return whether we achieved root.
 ```python
 
 def escalate_privileges(env: Environment, payload: bytes) -> bool:
+    """Perform the DMA. Return True iff the cred struct now shows root."""
     # TODO: Call perform_gpu_dma and return env.kernel_cred.is_root()
     return False
 ```
@@ -1116,28 +1128,141 @@ Optional exercises for deeper understanding. Each is short and independent.
 ```python
 
 def decode_pte_manually(raw: bytes) -> dict:
-    """Hand-decoded PTE parsing."""
+    """Hand-decoded PTE — do not call gpubreach_sim.decode_pte."""
     return {"valid": False, "aperture": 0, "physical_frame": 0}
+```
+
+### Exercise 3.2 (Optional): Inspect the exact flipped bit
+
+> **Difficulty**: 🔴🔴⚪⚪⚪
+> **Importance**: 🔵🔵🔵⚪⚪
+
+Compare the PTE's raw bytes in DRAM before and after the RowHammer flip
+and return the set of (byte_offset, bit_position) pairs that changed.
+There should be exactly one.
+
+You may use `env.dram.read(row, offset, length)` to grab bytes, and
+you'll need a fresh environment so the "before" snapshot is pristine.
+
+
+```python
+
 
 def find_flipped_bits(before: bytes, after: bytes) -> set[tuple[int, int]]:
     """Return {(byte_index, bit_position), ...} where before != after."""
+    # TODO: iterate over pairs of bytes, XOR them, and record each
+    # differing bit as (byte_index, bit_position).
     return set()
+```
+
+### Exercise 3.3 (Optional): Budget the hammer against the refresh window
+
+> **Difficulty**: 🔴⚪⚪⚪⚪
+> **Importance**: 🔵🔵🔵⚪⚪
+
+Before hammering, you'd want to know: will we even finish the activations
+inside the refresh window? Compute:
+
+1. The minimum number of hammer *rounds* to cross the flip threshold.
+   Each round hits both aggressors, so each round adds one activation
+   per aggressor.
+2. The simulated nanoseconds those rounds will cost. Each round costs
+   `2 * ACTIVATE_PRECHARGE_NS`.
+3. Whether that total time fits inside the refresh window.
+
+Return a dict with keys `"rounds"`, `"total_ns"`, `"total_ms"`,
+`"fits_refresh_window"`.
+
+
+```python
 
 def hammer_budget(threshold: int = HAMMER_THRESHOLD_ACTIVATIONS, tRC_ns: int = ACTIVATE_PRECHARGE_NS, refresh_ms: int = REFRESH_WINDOW_MS) -> dict:
     """Compute worst-case hammering cost."""
     return {"rounds": 0, "total_ns": 0, "total_ms": 0.0, "fits_refresh_window": False}
+    
+```
+
+### Exercise 3.4 (Optional): Maximum hammer rounds inside the window
+
+> **Difficulty**: 🔴⚪⚪⚪⚪
+> **Importance**: 🔵🔵🔵⚪⚪
+
+Flip the budget question around: given the refresh window, how *many*
+rounds could the attacker fit at most? Compare it to
+`HAMMER_THRESHOLD_ACTIVATIONS` — how comfortably do we fit?
+
+
+```python
 
 def max_rounds_in_window(refresh_ms: int = REFRESH_WINDOW_MS, tRC_ns: int = ACTIVATE_PRECHARGE_NS) -> int:
     """Maximum rounds that fit in refresh window."""
     return 0
+```
+
+### Exercise 3.5 (Optional): The IOMMU blocks what it promises to block
+
+> **Difficulty**: 🔴🔴⚪⚪⚪
+> **Importance**: 🔵🔵🔵🔵⚪
+
+Prove the IOMMU is doing its job — it *does* block writes to physical
+pages it has not mapped for the GPU. Use `env.iommu.validate(page, offset,
+length)` to confirm:
+
+1. Writes to `env.driver_page` at offset 0 with length `PAGE_SIZE` are
+   allowed.
+2. Writes to `env.driver_page` at offset 0 with length `PAGE_SIZE + 1`
+   are rejected (cross a page boundary).
+3. Writes to a *different* `DriverPage` instance are rejected (not
+   mapped).
+
+Return a dict with three booleans: `"intra_page_ok"`, `"overflow_page"`,
+`"other_page"`.
+
+
+```python
+
 
 def probe_iommu(env: Environment) -> dict:
     """Probe IOMMU enforcement."""
     return {"intra_page_ok": False, "overflow_page": False, "other_page": False}
+```
+
+### Exercise 3.6 (Optional): Measure the OOB overflow precisely
+
+> **Difficulty**: 🔴🔴⚪⚪⚪
+> **Importance**: 🔵🔵🔵⚪⚪
+
+Given a DMA payload length, how many bytes overflow past the driver
+buffer into adjacent kernel memory? Return 0 if no overflow.
+
+
+```python
+
 
 def overflow_bytes(payload_len: int) -> int:
     """Bytes that overflow past DRIVER_BUFFER_SIZE."""
     return 0
+```
+
+### Exercise 3.7 (Optional): A tighter payload
+
+> **Difficulty**: 🔴🔴⚪⚪⚪
+> **Importance**: 🔵🔵🔵⚪⚪
+
+The payload in Exercise 2.4 overshoots — it writes 132 bytes where 132 is
+exactly `DRIVER_BUFFER_SIZE + 4`. What if the cred struct's euid field
+isn't at the very start of the overflow region, but at some `offset`
+past `CRED_OFFSET`? Write a parameterised payload builder.
+
+The new signature:
+`craft_precise_payload(cred_offset_in_page: int, new_euid: int) → bytes`
+
+The payload should have length `cred_offset_in_page + 4` so that the last
+4 bytes land exactly at `cred_offset_in_page` inside the driver page —
+when the driver copies starting at `DRIVER_BUFFER_OFFSET = 0`.
+
+
+```python
 
 def craft_precise_payload(cred_offset_in_page: int, new_euid: int) -> bytes:
     """Precise payload targeting specific offset."""
