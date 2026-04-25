@@ -46,14 +46,15 @@ This final day combines policy analysis, vulnerability research, and hands-on at
     - [Exercise 2.3: Force the MMU to re-walk the flipped PTE](#exercise-23-force-the-mmu-to-re-walk-the-flipped-pte)
     - [Exercise 2.4: Craft the OOB DMA payload](#exercise-24-craft-the-oob-dma-payload)
     - [Exercise 2.5: Fire the DMA and confirm root](#exercise-25-fire-the-dma-and-confirm-root)
+    - [Print the flag](#print-the-flag)
 - [3️⃣ Phase 3 — Stretch: digging into the primitives (Optional)](#3️⃣-phase-3-—-stretch-digging-into-the-primitives-optional)
+    - [Exercise 3.1 (Optional): Decode a PTE by hand](#exercise-31-optional-decode-a-pte-by-hand)
     - [Exercise 3.2 (Optional): Inspect the exact flipped bit](#exercise-32-optional-inspect-the-exact-flipped-bit)
     - [Exercise 3.3 (Optional): Budget the hammer against the refresh window](#exercise-33-optional-budget-the-hammer-against-the-refresh-window)
     - [Exercise 3.4 (Optional): Maximum hammer rounds inside the window](#exercise-34-optional-maximum-hammer-rounds-inside-the-window)
     - [Exercise 3.5 (Optional): The IOMMU blocks what it promises to block](#exercise-35-optional-the-iommu-blocks-what-it-promises-to-block)
     - [Exercise 3.6 (Optional): Measure the OOB overflow precisely](#exercise-36-optional-measure-the-oob-overflow-precisely)
     - [Exercise 3.7 (Optional): A tighter payload](#exercise-37-optional-a-tighter-payload)
-- [4️⃣ Phase 4 — Debrief (Discussion Questions)](#4️⃣-phase-4-—-debrief-discussion-questions)
 - [GPUBreach Summary](#gpubreach-summary)
     - [Key Takeaways](#key-takeaways)
     - [Further Reading](#further-reading)
@@ -1047,6 +1048,16 @@ def find_aggressors(victim_row: int) -> tuple[int, int]:
     # TODO: Return (aggressor_a, aggressor_b) such that victim_row is between them
     # and |aggressor_a - aggressor_b| == 2
     return (0, 0)
+
+
+agg_a, agg_b = find_aggressors(PTE_ROW)
+print(f"Ex 2.1: aggressors for PTE_ROW={PTE_ROW} → {agg_a}, {agg_b}")
+from day6_final_test import test_find_aggressors
+
+
+test_find_aggressors(find_aggressors)
+
+env.stage1_aggressors_ok = True
 ```
 
 ### Exercise 2.2: Hammer until a bit flips
@@ -1062,8 +1073,34 @@ keys "flipped", "rounds", "total_ns".
 ```python
 
 def hammer_until_flip(dram: DRAM, agg_a: int, agg_b: int, victim_row: int, max_rounds: int = 2_000_000) -> dict:
-    # TODO: Implement the hammer loop
-    return {"flipped": False, "rounds": 0, "total_ns": 0}
+    """Drive the DRAM into a RowHammer flip on ``victim_row``."""
+    # TODO:
+    # 1. Initialise total_ns and rounds counters.
+    # 2. While `dram.has_flipped(victim_row)` is False (and you are
+    #    below `max_rounds`):
+    #      - call dram.hammer_once(aggressor_a, aggressor_b)
+    #      - add its return value (nanoseconds) to total_ns
+    #      - increment rounds
+    # 3. Return {"rounds": rounds, "total_ns": total_ns,
+    #            "flipped": dram.has_flipped(victim_row)}
+    return {"rounds": 0, "total_ns": 0, "flipped": False}
+
+
+flip_run = hammer_until_flip(env.dram, agg_a, agg_b, PTE_ROW)
+print(
+    f"Ex 2.2: flipped={flip_run['flipped']} after "
+    f"{flip_run['rounds']:,} rounds "
+    f"({flip_run['total_ns'] / 1_000_000:.2f} ms)"
+)
+from day6_final_test import test_hammer_until_flip
+
+
+test_hammer_until_flip(hammer_until_flip)
+
+env.stage2_flipped_in_refresh_window = (
+    flip_run["flipped"]
+    and flip_run["total_ns"] / 1_000_000 < REFRESH_WINDOW_MS
+)
 ```
 
 ### Exercise 2.3: Force the MMU to re-walk the flipped PTE
@@ -1071,15 +1108,36 @@ def hammer_until_flip(dram: DRAM, agg_a: int, agg_b: int, victim_row: int, max_r
 > **Difficulty**: 🔴⚪⚪⚪⚪
 > **Importance**: 🔵🔵🔵🔵⚪
 
-Call `env.page_table.sync_from_dram(env.dram)` to re-read the PTE from
-DRAM. Return the (before, after) aperture values.
+The DRAM bit is flipped, but the GPU MMU's cached copy still says
+"aperture = GPU VRAM". Call `page_table.sync_from_dram(env.dram)` to
+re-read the PTE bytes from DRAM, then return the `(before, after)` pair
+of aperture values.
+
+A real attacker triggers this re-walk with a GPU context switch, an
+explicit TLB flush from the driver, or simply by waiting for the cache
+line to be evicted.
 
 
 ```python
 
+
 def trigger_pte_refresh(env: Environment) -> tuple[int, int]:
+    """Resync the PT from DRAM. Return (before_aperture, after_aperture)."""
     # TODO: Capture before value, call sync_from_dram, capture after value
     return (0, 0)
+
+
+before, after = trigger_pte_refresh(env)
+print(f"Ex 2.3: aperture {before} → {after} (expected 0 → 1)")
+from day6_final_test import test_trigger_pte_refresh
+
+
+test_trigger_pte_refresh(trigger_pte_refresh)
+
+env.stage3_aperture_changed = (before, after) == (
+    APERTURE_GPU_LOCAL,
+    APERTURE_SYSTEM,
+)
 ```
 
 ### Exercise 2.4: Craft the OOB DMA payload
@@ -1087,11 +1145,20 @@ def trigger_pte_refresh(env: Environment) -> tuple[int, int]:
 > **Difficulty**: 🔴🔴⚪⚪⚪
 > **Importance**: 🔵🔵🔵🔵🔵
 
-Return a payload of length DRIVER_BUFFER_SIZE + 4 where the last 4 bytes
-encode new_euid as a little-endian integer.
+You need a byte string for the DMA payload such that:
+
+1. Its length is exactly `DRIVER_BUFFER_SIZE + 4` bytes. The first
+   `DRIVER_BUFFER_SIZE` bytes fill the driver buffer; the last 4 bytes
+   overflow into the `euid` field of the cred struct.
+2. The last 4 bytes encode the integer `0` (root's euid) as a 4-byte
+   little-endian number — matching how `KernelCred.euid` is serialised.
+
+You can put any content in the first `DRIVER_BUFFER_SIZE` bytes. The
+convention is to use `b"A"` so the hexdump is easy to read.
 
 
 ```python
+
 
 def craft_overflow_payload(new_euid: int = 0) -> bytes:
     """Return a DMA payload that overflows the driver buffer into euid."""
@@ -1100,6 +1167,17 @@ def craft_overflow_payload(new_euid: int = 0) -> bytes:
     # 2. Append the little-endian 4-byte encoding of `new_euid`.
     # 3. Return filler + euid_bytes.
     return b""
+
+
+payload = craft_overflow_payload()
+print(
+    f"Ex 2.4: payload={len(payload)} bytes "
+    f"({DRIVER_BUFFER_SIZE} filler + 4 euid)"
+)
+from day6_final_test import test_craft_overflow_payload
+
+
+test_craft_overflow_payload(craft_overflow_payload)
 ```
 
 ### Exercise 2.5: Fire the DMA and confirm root
@@ -1107,27 +1185,84 @@ def craft_overflow_payload(new_euid: int = 0) -> bytes:
 > **Difficulty**: 🔴⚪⚪⚪⚪
 > **Importance**: 🔵🔵🔵🔵🔵
 
-Call perform_gpu_dma with the payload and return whether we achieved root.
+Hand the payload to `perform_gpu_dma`. The simulator resolves the PTE,
+validates the transaction with the IOMMU (which approves — the page is
+mapped), and writes the payload into the driver page. The overflow lands
+on the cred struct and `env.kernel_cred.is_root()` flips to True.
+
+Call `perform_gpu_dma` with the positional arguments
+`(payload, VICTIM_GPU_VADDR, env.page_table, env.iommu, env.dram,
+env.driver_page)`, then return `env.kernel_cred.is_root()`.
 
 
 ```python
 
+
 def escalate_privileges(env: Environment, payload: bytes) -> bool:
     """Perform the DMA. Return True iff the cred struct now shows root."""
-    # TODO: Call perform_gpu_dma and return env.kernel_cred.is_root()
+    # TODO:
+    # 1. Call perform_gpu_dma(payload, VICTIM_GPU_VADDR,
+    #    env.page_table, env.iommu, env.dram, env.driver_page).
+    # 2. Return env.kernel_cred.is_root().
     return False
+
+
+rooted = escalate_privileges(env, payload)
+print(f"Ex 2.5: root achieved? {rooted}")
+from day6_final_test import test_escalate_privileges
+
+
+test_escalate_privileges(escalate_privileges)
+
+env.stage4_root_obtained = rooted
+```
+
+### Print the flag
+
+If every stage above succeeded, `env.check_all()` prints the flag.
+Otherwise it tells you which stage still needs work.
+
+
+```python
+
+env.check_all()
 ```
 
 ## 3️⃣ Phase 3 — Stretch: digging into the primitives (Optional)
 
 Optional exercises for deeper understanding. Each is short and independent.
 
+### Exercise 3.1 (Optional): Decode a PTE by hand
+
+> **Difficulty**: 🔴🔴⚪⚪⚪
+> **Importance**: 🔵🔵🔵⚪⚪
+
+Prove you understand the PTE byte layout by parsing an 8-byte PTE into a
+dict of the form `{"valid": bool, "aperture": int, "physical_frame": int}`
+without using `gpubreach_sim.pte.decode_pte`.
+
+Recall the layout (from the PTE module docstring):
+
+* byte 0: flags (bit 0 = valid, bit 1 = aperture, bits 2–7 reserved)
+* bytes 1–6: 48-bit little-endian physical frame number
+* byte 7: reserved
+
 
 ```python
 
 def decode_pte_manually(raw: bytes) -> dict:
     """Hand-decoded PTE — do not call gpubreach_sim.decode_pte."""
+    # TODO: pick apart raw[0], raw[1:7], bit by bit.
     return {"valid": False, "aperture": 0, "physical_frame": 0}
+
+
+# A sample PTE: valid=1, aperture=1, PFN=0xABCDEF
+sample = bytes([0b0000_0011]) + (0xABCDEF).to_bytes(6, "little") + b"\x00"
+print(f"Ex 3.1: decoded = {decode_pte_manually(sample)}")
+from day6_final_test import test_decode_pte_manually
+
+
+test_decode_pte_manually(decode_pte_manually)
 ```
 
 ### Exercise 3.2 (Optional): Inspect the exact flipped bit
@@ -1151,6 +1286,18 @@ def find_flipped_bits(before: bytes, after: bytes) -> set[tuple[int, int]]:
     # TODO: iterate over pairs of bytes, XOR them, and record each
     # differing bit as (byte_index, bit_position).
     return set()
+
+
+fresh3 = make_environment()
+pre = fresh3.dram.read(PTE_ROW, PTE_OFFSET_IN_ROW, PTE_BYTES)
+while not fresh3.dram.has_flipped(PTE_ROW):
+    fresh3.dram.hammer_once(PTE_ROW - 1, PTE_ROW + 1)
+post = fresh3.dram.read(PTE_ROW, PTE_OFFSET_IN_ROW, PTE_BYTES)
+print(f"Ex 3.2: flipped bits = {find_flipped_bits(pre, post)}")
+from day6_final_test import test_find_flipped_bits
+
+
+test_find_flipped_bits(find_flipped_bits)
 ```
 
 ### Exercise 3.3 (Optional): Budget the hammer against the refresh window
@@ -1178,6 +1325,19 @@ def hammer_budget(threshold: int = HAMMER_THRESHOLD_ACTIVATIONS, tRC_ns: int = A
     """Compute worst-case hammering cost."""
     return {"rounds": 0, "total_ns": 0, "total_ms": 0.0, "fits_refresh_window": False}
     
+
+
+
+budget = hammer_budget()
+print(
+    f"Ex 3.3: {budget['rounds']:,} rounds × {2 * ACTIVATE_PRECHARGE_NS} ns "
+    f"= {budget['total_ms']:.2f} ms "
+    f"(fits 64ms window: {budget['fits_refresh_window']})"
+)
+from day6_final_test import test_hammer_budget
+
+
+test_hammer_budget(hammer_budget)
 ```
 
 ### Exercise 3.4 (Optional): Maximum hammer rounds inside the window
@@ -1195,6 +1355,18 @@ rounds could the attacker fit at most? Compare it to
 def max_rounds_in_window(refresh_ms: int = REFRESH_WINDOW_MS, tRC_ns: int = ACTIVATE_PRECHARGE_NS) -> int:
     """Maximum rounds that fit in refresh window."""
     return 0
+
+
+max_rounds = max_rounds_in_window()
+headroom = max_rounds / HAMMER_THRESHOLD_ACTIVATIONS
+print(
+    f"Ex 3.4: up to {max_rounds:,} rounds fit in {REFRESH_WINDOW_MS} ms "
+    f"→ {headroom:.1f}× threshold headroom"
+)
+from day6_final_test import test_max_rounds_in_window
+
+
+test_max_rounds_in_window(max_rounds_in_window)
 ```
 
 ### Exercise 3.5 (Optional): The IOMMU blocks what it promises to block
@@ -1223,6 +1395,14 @@ Return a dict with three booleans: `"intra_page_ok"`, `"overflow_page"`,
 def probe_iommu(env: Environment) -> dict:
     """Probe IOMMU enforcement."""
     return {"intra_page_ok": False, "overflow_page": False, "other_page": False}
+
+
+probe = probe_iommu(env)
+print(f"Ex 3.5: IOMMU probe = {probe}")
+from day6_final_test import test_probe_iommu
+
+
+test_probe_iommu(probe_iommu)
 ```
 
 ### Exercise 3.6 (Optional): Measure the OOB overflow precisely
@@ -1240,6 +1420,14 @@ buffer into adjacent kernel memory? Return 0 if no overflow.
 def overflow_bytes(payload_len: int) -> int:
     """Bytes that overflow past DRIVER_BUFFER_SIZE."""
     return 0
+
+
+for n in [0, DRIVER_BUFFER_SIZE - 1, DRIVER_BUFFER_SIZE, DRIVER_BUFFER_SIZE + 4]:
+    print(f"Ex 3.6: payload {n}B → overflow {overflow_bytes(n)}B")
+from day6_final_test import test_overflow_bytes
+
+
+test_overflow_bytes(overflow_bytes)
 ```
 
 ### Exercise 3.7 (Optional): A tighter payload
@@ -1265,17 +1453,16 @@ when the driver copies starting at `DRIVER_BUFFER_OFFSET = 0`.
 def craft_precise_payload(cred_offset_in_page: int, new_euid: int) -> bytes:
     """Precise payload targeting specific offset."""
     return b""
+
+
+
+tight = craft_precise_payload(CRED_OFFSET, 0)
+print(f"Ex 3.7: precise payload is {len(tight)} bytes")
+from day6_final_test import test_craft_precise_payload
+
+
+test_craft_precise_payload(craft_precise_payload)
 ```
-
-## 4️⃣ Phase 4 — Debrief (Discussion Questions)
-
-1. **Real-world timing**: How does the lab's ~20ms vs 64ms window compare to actual GPU RowHammer attacks?
-2. **ECC limitations**: Why doesn't SECDED ECC prevent this attack?
-3. **IOMMU scope**: Why doesn't the IOMMU block the out-of-bounds write?
-4. **Attack discovery**: How would a real attacker find the target PTE row location?
-
-Reference answers are available in the full solution file.
-
 
 ## GPUBreach Summary
 
@@ -1307,9 +1494,11 @@ This comprehensive day covered three critical dimensions of AI infrastructure se
 
 ### Key Takeaways
 
-- **Document Analysis**: Learned to systematically evaluate security frameworks across threat actor classifications (RAND OC1-OC5), policy recommendations (IAPS), and novel technical controls (SL5)
-- **Vulnerability Research**: Understood how LD_PRELOAD container escapes work through CVE-2025-23266 analysis, highlighting trust boundary assumptions in GPU container runtimes
-- **Attack Chain Implementation**: Executed a complete GPU-based privilege escalation through RowHammer, aperture bit manipulation, IOMMU bypass, and kernel exploitation
+- **RAND framework**: OC1-OC5 threat actors and SL1-SL5 progressive controls give a structured way to match defenses to adversary capability. Model weights are uniquely sensitive — unlike traditional IP, they are immediately executable and high-value at terabyte scale.
+- **IAPS policy lens**: Three critical attack vectors (side-channel, supply chain, weight exfiltration) and a four-point policy framework (standards, R&D, intelligence sharing, supply chain decoupling) coordinate government-industry response. Current data center practices are insufficient for AI-specific threats.
+- **SL5 novel controls**: Five security domains (supply chain, network, machine, physical, personnel) require coordinated novel approaches. Reaching SL5 demands a *radical reduction* in trusted hardware/software components, and the document's 3-6 month feasibility assessment is the practical entry point for planning.
+- **Vulnerability Research**: CVE-2025-23266 shows how LD_PRELOAD container escapes break trust-boundary assumptions in GPU container runtimes — namespaces/cgroups/seccomp don't protect host-side toolkit execution.
+- **Attack Chain Implementation**: GPUBreach chains RowHammer → aperture bit flip → IOMMU bypass → kernel cred overwrite. Single bit flips in PTEs change memory-access semantics, and the IOMMU's page granularity leaves sub-page OOB writes unblocked.
 
 ### Implementation Priorities for Your Organization
 
