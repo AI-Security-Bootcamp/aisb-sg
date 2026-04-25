@@ -1350,9 +1350,11 @@ This comprehensive day covered three critical dimensions of AI infrastructure se
 
 ### Key Takeaways
 
-- **Document Analysis**: Learned to systematically evaluate security frameworks across threat actor classifications (RAND OC1-OC5), policy recommendations (IAPS), and novel technical controls (SL5)
-- **Vulnerability Research**: Understood how LD_PRELOAD container escapes work through CVE-2025-23266 analysis, highlighting trust boundary assumptions in GPU container runtimes
-- **Attack Chain Implementation**: Executed a complete GPU-based privilege escalation through RowHammer, aperture bit manipulation, IOMMU bypass, and kernel exploitation
+- **RAND framework**: OC1-OC5 threat actors and SL1-SL5 progressive controls give a structured way to match defenses to adversary capability. Model weights are uniquely sensitive — unlike traditional IP, they are immediately executable and high-value at terabyte scale.
+- **IAPS policy lens**: Three critical attack vectors (side-channel, supply chain, weight exfiltration) and a four-point policy framework (standards, R&D, intelligence sharing, supply chain decoupling) coordinate government-industry response. Current data center practices are insufficient for AI-specific threats.
+- **SL5 novel controls**: Five security domains (supply chain, network, machine, physical, personnel) require coordinated novel approaches. Reaching SL5 demands a *radical reduction* in trusted hardware/software components, and the document's 3-6 month feasibility assessment is the practical entry point for planning.
+- **Vulnerability Research**: CVE-2025-23266 shows how LD_PRELOAD container escapes break trust-boundary assumptions in GPU container runtimes — namespaces/cgroups/seccomp don't protect host-side toolkit execution.
+- **Attack Chain Implementation**: GPUBreach chains RowHammer → aperture bit flip → IOMMU bypass → kernel cred overwrite. Single bit flips in PTEs change memory-access semantics, and the IOMMU's page granularity leaves sub-page OOB writes unblocked.
 
 ### Implementation Priorities for Your Organization
 
