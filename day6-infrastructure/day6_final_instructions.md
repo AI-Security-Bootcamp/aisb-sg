@@ -230,8 +230,14 @@ This discussion session guides you through three foundational reports on AI infr
 
 **Questions for Each Group:**
 1. What specific technical mechanism does IAPS describe for this attack?
+- Most of the propsoals require some form of physical access to the hardware that is hosting a certain model, or data
+- Therefore, they classify this type of attack as very expensive, and mostly require some form of state backing, since there is actually no specific capability for anyone below OC4 to execute this, at least not at scale, given the physical defensive measures that are in place for datacenters today
 2. Why are AI workloads particularly vulnerable compared to traditional systems?
+- There is a lack of defenses against physical access attacks
+- Model weights remain a prime target for side-channel attacks, and often, model weights are stored in unencrypted manners
 3. What defensive measures does IAPS recommend?
+- All of the proposals are relevant, for example, having a data center standard would really help since this changes from data center to data center which technically means that there are a myriad of attack techniques which could be applied in order to detemrine what needs to happen where.
+- They also recommend funding R&D, which I think is very valuable because side-channel attacks are particularly expensive (requires expensive equipemnt and accdess to expensive ahrdware- 
 
 **Cross-Group Analysis**: After presentations, discuss:
 - Which attack vector is most cost-effective for adversaries?
@@ -269,8 +275,16 @@ This discussion session guides you through three foundational reports on AI infr
 
 **Implementation Scenario**: Your organization operates three data centers with 15,000 GPUs total. Using the IAPS recommendations, design an implementation plan:
 
-1. **Security Standards**: How would you implement "AI data center-specific security framework with progressive maturity levels"?
+1. **Security Standards**: How would you implement "AI data center-specific security framework with progressive maturity levels"?\
+- Step 1 map out maturity levels / use RAND
+- Step 2 gather funding for implementation
+- Step 3 implement
+- Step 4 
 2. **R&D Investment**: What specific defensive technologies would you prioritize for DARPA-style funding?
+- EMP protection
+- U
+- Energy backups
+- 
 3. **Intelligence Sharing**: What incident reporting requirements would you establish?
 4. **Supply Chain Decoupling**: How quickly could you shift away from potentially compromised suppliers?
 
